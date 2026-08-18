@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { MarketingFooter, MarketingNav } from "@/components/marketing";
 import { LogoMark } from "@/components/brand";
-import { ShopifyLogo } from "@/components/shopify-logo";
+import { IntegrationLogo, type IntegrationId } from "@/components/integration-logos";
 
 const logos = [
   "Shopify",
@@ -294,21 +294,32 @@ export default function HomePage() {
           Stores, ads, WhatsApp and carriers. One click each.
         </h2>
         <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {[
-            ["Shopify", "Official sync"],
-            ["WooCommerce", "Orders + stock"],
-            ["YouCan", "MENA stores"],
-            ["Google Sheets", "Import in 2 min"],
-            ["Facebook Leads", "Forms → orders"],
-            ["TikTok Forms", "Spark ads"],
-            ["WhatsApp API", "Green tick"],
-            ["Ozon / Ameex / Aramex", "Labels + AWB"],
-          ].map(([n, d]) => (
+          {(
+            [
+              ["Shopify", "Official sync", "shopify"],
+              ["WooCommerce", "Orders + stock", "woocommerce"],
+              ["YouCan", "MENA stores", "youcan"],
+              ["Google Sheets", "Import in 2 min", "sheets"],
+              ["Facebook Leads", "Forms → orders", "facebook"],
+              ["TikTok Forms", "Spark ads", "tiktok"],
+              ["WhatsApp API", "Green tick", "whatsapp"],
+              ["Ozon Express", "Labels + AWB", "ozon"],
+              ["Ameex", "Labels + AWB", "ameex"],
+              ["Aramex", "Labels + AWB", "aramex"],
+            ] as const satisfies ReadonlyArray<readonly [string, string, IntegrationId]>
+          ).map(([n, d, logo]) => (
             <div key={n} className="rounded-2xl border border-sand bg-white p-4">
               <div className="flex items-center gap-3">
-                {n === "Shopify" ? (
-                  <ShopifyLogo className="h-9 w-9 shrink-0" />
-                ) : null}
+                <IntegrationLogo
+                  id={logo}
+                  className={
+                    logo === "woocommerce"
+                      ? "h-8 w-12 shrink-0"
+                      : logo === "aramex"
+                        ? "h-3.5 w-12 shrink-0"
+                        : "h-9 w-9 shrink-0 object-contain"
+                  }
+                />
                 <div>
                   <div className="text-sm font-semibold">{n}</div>
                   <div className="mt-1 text-xs text-zinc-500">{d}</div>
