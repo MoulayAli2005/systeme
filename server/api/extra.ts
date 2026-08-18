@@ -13,6 +13,12 @@ import { assignNext, setPresence, type DispatchStrategy } from "../modules/call-
 import { agentLeaderboard } from "../modules/analytics/service";
 import { providerStatus } from "../providers/registry";
 import * as orders from "../modules/orders/service";
+import {
+  WHATSAPP_PRESETS,
+  presetActions,
+  presetById,
+  presetConditions,
+} from "../modules/automations/whatsapp";
 
 export async function handleExtra(
   req: NextRequest,
@@ -187,6 +193,56 @@ export async function handleExtra(
       })
       .parse(body);
     return json(await adjustStock({ organizationId: ctx.organizationId, ...data }));
+  }
+
+  if (path === "automations/whatsapp" && method === "GET") {
+    const ctx = await requirePermission("automations.read", req);
+    const rows = await prisma.automation.findMany({ where: { organizationId: ctx.organizationId } });
+    const whatsapp = providerStatus().whatsapp;
+    return json({
+      configured: whatsapp.configured,
+      provider: whatsapp.name,
+      presets: WHATSAPP_PRESETS.map((preset) => {
+        const row = rows.find((r) => {
+          const conditions = (r.conditions ?? {}) as Record<string, unknown>;
+          return conditions.preset === preset.id || r.name === preset.name;
+        });
+        return {
+          ...preset,
+          enabled: row?.enabled ?? false,
+          automationId: row?.id ?? null,
+          runsToday: row?.runsToday ?? 0,
+        };
+      }),
+    });
+  }
+
+  if (path === "automations/whatsapp" && method === "POST") {
+    const ctx = await requirePermission("automations.write", req);
+    const data = z.object({ id: z.string(), enabled: z.boolean() }).parse(body);
+    const preset = presetById(data.id);
+    if (!preset) throw new ApiError(404, "NOT_FOUND", "Unknown WhatsApp automation.");
+    const existing = await prisma.automation.findMany({ where: { organizationId: ctx.organizationId } });
+    const row = existing.find((r) => {
+      const conditions = (r.conditions ?? {}) as Record<string, unknown>;
+      return conditions.preset === preset.id || r.name === preset.name;
+    });
+    if (row) {
+      await prisma.automation.update({ where: { id: row.id }, data: { enabled: data.enabled } });
+      return json({ ok: true, id: row.id, enabled: data.enabled });
+    }
+    if (!data.enabled) return json({ ok: true, enabled: false });
+    const created = await prisma.automation.create({
+      data: {
+        organizationId: ctx.organizationId,
+        name: preset.name,
+        trigger: preset.trigger,
+        conditions: presetConditions(preset),
+        actions: presetActions(preset),
+        enabled: true,
+      },
+    });
+    return json({ ok: true, id: created.id, enabled: true }, 201);
   }
 
   if (path === "automations" && method === "POST") {

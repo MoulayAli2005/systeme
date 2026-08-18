@@ -7,7 +7,7 @@ export type ChatTurn = { role: "user" | "assistant"; content: string };
 
 const PRODUCT_FACTS = `
 Nexora is a multi-tenant cash-on-delivery (COD) operations platform for e-commerce teams, especially in Morocco and MENA.
-It covers: order confirmation (WhatsApp/call center), carrier dispatch, tracking, returns, COD remittance matching, inventory, automations, analytics and a workspace AI copilot.
+It covers: order confirmation (WhatsApp automation + call center), carrier dispatch, tracking, returns, COD remittance matching, inventory, automations, analytics and a workspace AI copilot.
 Stack: Next.js, PostgreSQL, Redis, BullMQ.
 Official partners: Shopify, YouCan, Dropify, and Moroccan carriers including Ozon Express, Ameex, Aramex, Sendit, Cathedis, Chronopost Maroc, CTM, Tawssil, DHL Express and Olivraison. Any other carrier with an HTTP API can be connected.
 Integrations also include WooCommerce, WhatsApp (Twilio), Google Sheets, Meta and TikTok.
@@ -74,10 +74,10 @@ export function publicReply(question: string): { answer: string; provider: "faq"
       provider: "faq",
       answer:
         lang === "ar"
-          ? "التأكيد يقدر يكون واتساب أو مركز اتصال. الرسائل تتصيفط مع المبلغ والمدينة، والعامل يشوف نفس الطلب."
+          ? "التأكيد كيخدم بـ WhatsApp automation: طلب جديد، شحن، في الطريق، تسليم. الرسالة فيها المبلغ والمدينة، والعامل كيشوف نفس المحادثة."
           : lang === "fr"
-            ? "La confirmation passe par WhatsApp ou le centre d'appels. Le message contient déjà le COD et la ville ; l'agent voit la même commande."
-            : "Confirmation runs over WhatsApp or the call desk. The message already has the COD amount and city; the agent sees the same order.",
+            ? "La confirmation passe par WhatsApp automation : commande créée, colis expédié, en livraison, livré. Le message contient déjà le COD et la ville ; l'agent voit la même commande dans la messagerie."
+            : "Confirmation runs on WhatsApp automation: order created, shipped, out for delivery, delivered. The message already has the COD amount and city; the agent sees the same thread.",
     };
   }
 

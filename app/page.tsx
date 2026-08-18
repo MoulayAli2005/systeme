@@ -154,8 +154,8 @@ export default function HomePage() {
               title="Confirm orders without making a single call."
               body="Send a WhatsApp the moment an order is placed. Customers tap Confirm in seconds — no missed calls, no idle agents, no lost COD."
               points={[
+                "WhatsApp automation on create, shipped, out for delivery, delivered",
                 "Costs a fraction of a phone call",
-                "Runs at 2am when the call center is closed",
                 "Falls back to your agents when a human is needed",
               ]}
             />

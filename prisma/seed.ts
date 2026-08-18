@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "../server/db";
 import { ensurePermissions, seedRolesForOrg, seedStatuses } from "../server/org/bootstrap";
+import { presetActions, presetConditions, WHATSAPP_PRESETS } from "../server/modules/automations/whatsapp";
 
 const CITIES = [
   "Casablanca",
@@ -571,14 +572,15 @@ async function seedOrg(opts: {
 
   await prisma.automation.createMany({
     data: [
-      {
+      ...WHATSAPP_PRESETS.map((preset, index) => ({
         organizationId: org.id,
-        name: "WhatsApp confirm on create",
-        trigger: "order.created",
-        conditions: { paymentMethod: "cod" },
-        actions: [{ type: "send_whatsapp", text: "Hi {{customer_name}}, confirm {{order_id}} ({{total}} MAD COD to {{city}})?" }],
-        runsToday: 40,
-      },
+        name: preset.name,
+        trigger: preset.trigger,
+        conditions: presetConditions(preset),
+        actions: presetActions(preset),
+        enabled: true,
+        runsToday: [40, 12, 18, 22, 16, 14, 3][index] ?? 0,
+      })),
       {
         organizationId: org.id,
         name: "Dispatch on confirm",

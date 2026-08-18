@@ -3,6 +3,7 @@ import { matchConditions, scoreRisk } from "../server/modules/risk/engine";
 import { signWebhook } from "../server/modules/webhooks/dispatch";
 import { parsePage } from "../server/http";
 import { PLANS } from "../server/modules/billing/plans";
+import { interpolateWhatsApp, WHATSAPP_PRESETS } from "../server/modules/automations/whatsapp";
 
 describe("risk engine", () => {
   it("marks high-velocity cancellers as high risk", () => {
@@ -70,5 +71,33 @@ describe("billing plans", () => {
   it("defines the five SaaS tiers", () => {
     expect(Object.keys(PLANS)).toEqual(["FREE", "STARTER", "PRO", "BUSINESS", "ENTERPRISE"]);
     expect(PLANS.ENTERPRISE.orders).toBe(-1);
+  });
+});
+
+describe("WhatsApp automation", () => {
+  it("fills order fields in the preset message", () => {
+    const text = interpolateWhatsApp(WHATSAPP_PRESETS[0].message, {
+      number: "NX-11546",
+      total: 289,
+      customer: { name: "Nabil", city: "Marrakech", phone: "0612345678" },
+      product: "Aurora Linen Shirt",
+    });
+    expect(text).toContain("Nabil");
+    expect(text).toContain("NX-11546");
+    expect(text).toContain("289");
+    expect(text).toContain("Marrakech");
+    expect(text).toContain("Aurora Linen Shirt");
+  });
+
+  it("covers the COD journey from create to return", () => {
+    expect(WHATSAPP_PRESETS.map((p) => p.id)).toEqual([
+      "wa_confirm",
+      "wa_no_answer",
+      "wa_confirmed",
+      "wa_shipped",
+      "wa_ofd",
+      "wa_delivered",
+      "wa_returned",
+    ]);
   });
 });
