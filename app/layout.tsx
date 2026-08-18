@@ -29,7 +29,8 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const jar = await cookies();
-  const locale = isLocale(jar.get("nexora_locale")?.value) ? jar.get("nexora_locale")!.value : DEFAULT_LOCALE;
+  const raw = jar.get("nexora_locale")?.value;
+  const locale = isLocale(raw) ? raw : DEFAULT_LOCALE;
 
   return (
     <html
