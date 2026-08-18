@@ -12,24 +12,13 @@ import { messagingProvider, phoneProvider, shippingProvider } from "@/server/pro
 import { enqueue } from "@/server/jobs/queues";
 import { health } from "@/server/health";
 import { handleExtra } from "@/server/api/extra";
+import { enforceRateLimit, RATE_LIMITS } from "@/server/ratelimit";
+import { log, requestIdOf } from "@/server/log";
+import { clientIp, identityKey } from "@/server/request";
 
 export const dynamic = "force-dynamic";
 
-const hits = new Map<string, { n: number; t: number }>();
-function rateLimit(key: string, limit = 30) {
-  const now = Date.now();
-  const row = hits.get(key);
-  if (!row || now - row.t > 60_000) {
-    hits.set(key, { n: 1, t: now });
-    return;
-  }
-  row.n += 1;
-  if (row.n > limit) throw new ApiError(429, "RATE_LIMIT", "Too many requests.");
-}
-
-function ip(req: NextRequest) {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "127.0.0.1";
-}
+const ip = clientIp;
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ slug?: string[] }> }) {
   return handle(req, await ctx.params, "GET");
@@ -45,17 +34,27 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ slug?: s
 }
 
 async function handle(req: NextRequest, params: { slug?: string[] }, method: string) {
+  const requestId = requestIdOf(req);
+  const started = Date.now();
+  const path = (params.slug ?? []).join("/");
   try {
-    const slug = params.slug ?? [];
-    const path = slug.join("/");
     const url = new URL(req.url);
     let body: unknown = null;
     if (method !== "GET" && method !== "DELETE") {
       body = await req.json().catch(() => null);
     }
-    return await route(req, method, path, url, body);
+    await enforceRateLimit(
+      `${method === "GET" ? "read" : "write"}:${identityKey(req)}`,
+      method === "GET" ? RATE_LIMITS.read : RATE_LIMITS.mutation,
+    );
+    const res = await route(req, method, path, url, body);
+    res.headers.set("X-Request-Id", requestId);
+    log.info("api", { requestId, method, path, status: res.status, ms: Date.now() - started });
+    return res;
   } catch (err) {
-    return errorResponse(err);
+    const res = errorResponse(err, requestId);
+    log.info("api", { requestId, method, path, status: res.status, ms: Date.now() - started });
+    return res;
   }
 }
 
@@ -64,6 +63,9 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
   if (extra) return extra;
 
   if (path.startsWith("track/") && method === "GET") {
+    // Public and unauthenticated: without a budget this endpoint lets anyone
+    // enumerate AWBs and read customer cities.
+    await enforceRateLimit(`track:${ip(req)}`, RATE_LIMITS.publicTracking);
     const awb = decodeURIComponent(path.slice("track/".length));
     const row = await prisma.shipment.findFirst({
       where: { awb },
@@ -79,14 +81,18 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
   }
 
   if (path === "auth/register" && method === "POST") {
-    rateLimit(`reg:${ip(req)}`, 10);
+    await enforceRateLimit(`register:${ip(req)}`, RATE_LIMITS.register);
     const result = await auth.register(body, ip(req), req.headers.get("user-agent") ?? undefined);
     const res = json({ user: result.user, organization: result.organization });
     res.headers.set("Set-Cookie", sessionCookie(result.session.token, result.session.expiresAt));
     return res;
   }
   if (path === "auth/login" && method === "POST") {
-    rateLimit(`login:${ip(req)}`, 20);
+    await enforceRateLimit(`login:${ip(req)}`, RATE_LIMITS.login);
+    const email = typeof body === "object" && body && "email" in body ? String(body.email) : "";
+    // Per-account budget too, so a botnet cannot spread a credential-stuffing
+    // run for one victim across many source addresses.
+    if (email) await enforceRateLimit(`login-account:${email.toLowerCase()}`, RATE_LIMITS.loginAccount);
     const result = await auth.login(body, ip(req), req.headers.get("user-agent") ?? undefined);
     const res = json({ user: result.user, organizations: result.organizations });
     res.headers.set("Set-Cookie", sessionCookie(result.session.token, result.session.expiresAt));
@@ -105,6 +111,8 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
   }
   if (path === "auth/forgot" && method === "POST") {
     const email = z.object({ email: z.string().email() }).parse(body).email;
+    await enforceRateLimit(`forgot:${ip(req)}`, RATE_LIMITS.passwordReset);
+    await enforceRateLimit(`forgot-account:${email.toLowerCase()}`, RATE_LIMITS.passwordReset);
     return json(await auth.forgotPassword(email));
   }
   if (path === "auth/reset" && method === "POST") {
@@ -467,6 +475,7 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
 
   if (path === "ai/ask" && method === "POST") {
     const ctx = await requirePermission("ai.use", req);
+    await enforceRateLimit(`ai:${ctx.organizationId}`, RATE_LIMITS.aiAsk);
     const question = z.object({ question: z.string().min(2) }).parse(body).question;
     return json(await ai.ask(ctx.organizationId, question));
   }
