@@ -13,6 +13,7 @@ export const RATE_LIMITS = {
   register: { limit: 10, windowSec: 60 },
   passwordReset: { limit: 5, windowSec: 900 },
   publicTracking: { limit: 60, windowSec: 60 },
+  publicChat: { limit: 40, windowSec: 60 },
   inboundWebhook: { limit: 600, windowSec: 60 },
   apiKey: { limit: 600, windowSec: 60 },
   mutation: { limit: 240, windowSec: 60 },

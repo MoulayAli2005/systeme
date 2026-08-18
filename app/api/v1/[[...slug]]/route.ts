@@ -517,8 +517,29 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
   if (path === "ai/ask" && method === "POST") {
     const ctx = await requirePermission("ai.use", req);
     await enforceRateLimit(`ai:${ctx.organizationId}`, RATE_LIMITS.aiAsk);
-    const question = z.object({ question: z.string().min(2) }).parse(body).question;
-    return json(await ai.ask(ctx.organizationId, question));
+    const data = z
+      .object({
+        question: z.string().min(2).max(2000),
+        history: z
+          .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(4000) }))
+          .max(12)
+          .optional(),
+      })
+      .parse(body);
+    return json(await ai.ask(ctx.organizationId, data.question, data.history ?? []));
+  }
+
+  if (path === "chat" && method === "POST") {
+    await enforceRateLimit(`chat:${ip(req)}`, RATE_LIMITS.publicChat);
+    const data = z
+      .object({
+        messages: z
+          .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(2000) }))
+          .min(1)
+          .max(20),
+      })
+      .parse(body);
+    return json(await ai.publicChat(data.messages));
   }
 
   if (path === "integrations" && method === "GET") {

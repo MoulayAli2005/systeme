@@ -33,6 +33,9 @@ export default function AiPage() {
         </p>
       </div>
       <div className="min-h-64 space-y-3 rounded-2xl border border-sand bg-white p-4">
+        <p className="text-sm text-zinc-500">
+          You can also open the <strong>Ask Noor</strong> bubble at the bottom of any page — same copilot, always at hand.
+        </p>
         {log.map((m, i) => (
           <div key={i}>
             <div className="text-xs font-semibold text-zinc-400">You</div>
