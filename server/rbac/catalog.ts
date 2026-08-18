@@ -18,6 +18,8 @@ export const PERMISSIONS = [
   ["returns.read", "returns", "View returns"],
   ["returns.write", "returns", "Process returns"],
   ["analytics.read", "analytics", "View analytics"],
+  ["finance.read", "finance", "View COD reconciliation and payouts"],
+  ["finance.write", "finance", "Import carrier statements and settle payouts"],
   ["marketing.read", "marketing", "View campaigns"],
   ["marketing.write", "marketing", "Manage campaigns"],
   ["automations.read", "automations", "View automations"],
@@ -30,6 +32,39 @@ export const PERMISSIONS = [
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number][0];
+
+export const ALL_PERMISSIONS = PERMISSIONS.map((p) => p[0]);
+
+export function isPermissionKey(value: string): value is PermissionKey {
+  return (ALL_PERMISSIONS as readonly string[]).includes(value);
+}
+
+/**
+ * Permissions an API key may ever hold. Managing users, roles, workspace
+ * settings and billing stays with signed-in humans: a leaked integration token
+ * must not be able to add an administrator or read invoices.
+ */
+export const API_KEY_GRANTABLE: PermissionKey[] = ALL_PERMISSIONS.filter(
+  (key) => !["users.manage", "settings.manage", "billing.read", "integrations.manage"].includes(key),
+);
+
+/**
+ * Applied when a key was created without an explicit scope list, which is the
+ * case for every key issued before scopes existed.
+ */
+export const API_KEY_DEFAULT_SCOPES: PermissionKey[] = [
+  "orders.read",
+  "orders.write",
+  "orders.confirm",
+  "customers.read",
+  "customers.write",
+  "products.read",
+  "inventory.read",
+  "shipping.read",
+  "shipping.dispatch",
+  "returns.read",
+  "analytics.read",
+];
 
 export const ROLE_KEYS = [
   "owner",
@@ -92,7 +127,15 @@ export function permissionsForRole(role: string): PermissionKey[] {
     case "warehouse_employee":
       return ["orders.read", "inventory.read", "shipping.read", "returns.read"];
     case "accountant":
-      return ["orders.read", "analytics.read", "billing.read", "customers.read"];
+      return [
+        "orders.read",
+        "analytics.read",
+        "billing.read",
+        "customers.read",
+        "shipping.read",
+        "finance.read",
+        "finance.write",
+      ];
     case "marketing_manager":
       return ["orders.read", "analytics.read", "marketing.read", "marketing.write", "ai.use"];
     default:

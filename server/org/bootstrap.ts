@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "../db";
 import { PERMISSIONS, permissionsForRole, ROLE_KEYS } from "../rbac/catalog";
+import { DEFAULT_TRANSITIONS } from "../modules/orders/status";
 
 export const DEFAULT_STATUSES = [
   { key: "NEW", label: "New", color: "sky", sortOrder: 0, category: "open" },
@@ -54,13 +55,45 @@ export async function seedRolesForOrg(organizationId: string) {
 }
 
 export async function seedStatuses(organizationId: string) {
-  await prisma.statusDefinition.createMany({
-    data: DEFAULT_STATUSES.map((s) => ({
-      organizationId,
-      ...s,
-    })),
-    skipDuplicates: true,
+  const existing = await prisma.statusDefinition.findMany({
+    where: { organizationId },
+    select: { key: true, allowedNext: true },
   });
+  const byKey = new Map(existing.map((row) => [row.key, row]));
+
+  for (const status of DEFAULT_STATUSES) {
+    const current = byKey.get(status.key);
+    const allowedNext = DEFAULT_TRANSITIONS[status.key] ?? [];
+    if (!current) {
+      await prisma.statusDefinition.create({
+        data: { organizationId, ...status, allowedNext },
+      });
+      continue;
+    }
+    // Only fill in a missing transition list. An organization that has edited
+    // its own flow keeps it.
+    if (current.allowedNext.length === 0 && allowedNext.length) {
+      await prisma.statusDefinition.update({
+        where: { organizationId_key: { organizationId, key: status.key } },
+        data: { allowedNext },
+      });
+    }
+  }
+}
+
+/**
+ * Re-applies the permission catalog to every workspace. Adding a permission to
+ * `PERMISSIONS` only affects new organizations otherwise, so this runs on
+ * deploy (`npm run db:sync-rbac`) to backfill existing ones.
+ */
+export async function syncAllOrganizations() {
+  await ensurePermissions();
+  const orgs = await prisma.organization.findMany({ select: { id: true } });
+  for (const org of orgs) {
+    await seedRolesForOrg(org.id);
+    await seedStatuses(org.id);
+  }
+  return { organizations: orgs.length };
 }
 
 export function orgWhere(organizationId: string): { organizationId: string } {

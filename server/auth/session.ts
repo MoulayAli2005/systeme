@@ -3,7 +3,12 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../db";
 import { ApiError } from "../http";
 import { randomToken, sha256 } from "../crypto";
-import type { PermissionKey } from "../rbac/catalog";
+import {
+  API_KEY_DEFAULT_SCOPES,
+  API_KEY_GRANTABLE,
+  isPermissionKey,
+  type PermissionKey,
+} from "../rbac/catalog";
 
 export const COOKIE = "nexora_session";
 const SESSION_DAYS = 14;
@@ -45,6 +50,8 @@ export type AuthContext = {
   organizationName: string;
   roleKey: string;
   permissions: PermissionKey[];
+  /** Set when the caller authenticated with an API key rather than a session. */
+  apiKeyId?: string;
 };
 
 export async function getTokenFromRequest(req?: Request) {
@@ -108,10 +115,18 @@ export async function resolveAuth(req?: Request): Promise<AuthContext | null> {
   };
 }
 
+/** Avoids a write on every single API call just to refresh a timestamp. */
+const LAST_USED_THROTTLE_MS = 60_000;
+
 async function resolveApiKey(token: string): Promise<AuthContext | null> {
   const key = await prisma.apiKey.findUnique({ where: { hash: sha256(token) } });
   if (!key || key.revokedAt) return null;
-  await prisma.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } });
+  if (key.expiresAt && key.expiresAt < new Date()) return null;
+
+  if (!key.lastUsedAt || Date.now() - key.lastUsedAt.getTime() > LAST_USED_THROTTLE_MS) {
+    await prisma.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } });
+  }
+
   const membership = await prisma.membership.findFirst({
     where: { organizationId: key.organizationId, role: { key: "owner" }, status: "active" },
     include: {
@@ -121,6 +136,17 @@ async function resolveApiKey(token: string): Promise<AuthContext | null> {
     },
   });
   if (!membership) return null;
+
+  // A key is the intersection of three things: what its scopes ask for, what
+  // the workspace owner can do, and what any key is ever allowed to do. It is
+  // never simply "whatever the owner can do", which is what it used to be.
+  const requested = key.scopes.length
+    ? (key.scopes.filter(isPermissionKey) as PermissionKey[])
+    : API_KEY_DEFAULT_SCOPES;
+  const ownerPermissions = new Set(membership.role.permissions.map((p) => p.permission.key));
+  const grantable = new Set<string>(API_KEY_GRANTABLE);
+  const permissions = requested.filter((p) => ownerPermissions.has(p) && grantable.has(p));
+
   return {
     userId: membership.userId,
     email: membership.user.email,
@@ -128,8 +154,9 @@ async function resolveApiKey(token: string): Promise<AuthContext | null> {
     isPlatformAdmin: false,
     organizationId: key.organizationId,
     organizationName: membership.organization.name,
-    roleKey: membership.role.key,
-    permissions: membership.role.permissions.map((p) => p.permission.key) as PermissionKey[],
+    roleKey: `api_key:${key.prefix}`,
+    permissions,
+    apiKeyId: key.id,
   };
 }
 
