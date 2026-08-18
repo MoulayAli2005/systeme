@@ -1,9 +1,14 @@
-import { prisma } from "../../db";
+import { prisma, type Db } from "../../db";
 
 type Rule = { city?: string; region?: string };
 
-export async function routeWarehouse(organizationId: string, city: string, storeWarehouseId?: string | null) {
-  const warehouses = await prisma.warehouse.findMany({ where: { organizationId } });
+export async function routeWarehouse(
+  organizationId: string,
+  city: string,
+  storeWarehouseId?: string | null,
+  client: Db = prisma,
+) {
+  const warehouses = await client.warehouse.findMany({ where: { organizationId } });
   if (!warehouses.length) return storeWarehouseId ?? null;
 
   const needle = city.trim().toLowerCase();
