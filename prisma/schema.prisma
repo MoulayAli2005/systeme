@@ -50,6 +50,10 @@ model Organization {
   ads             Ad[]
   adSpend         AdSpend[]
   usageRecords    UsageRecord[]
+  carrierRates    CarrierRate[]
+  remittances     Remittance[]
+  inboundEvents   InboundEvent[]
+  jobRuns         JobRun[]
   subscription    Subscription?
 }
 
@@ -160,18 +164,30 @@ model LoginEvent {
 }
 
 model StatusDefinition {
-  id             String  @id @default(uuid())
+  id             String   @id @default(uuid())
   organizationId String
   key            String
   label          String
-  color          String  @default("zinc")
-  sortOrder      Int     @default(0)
-  isTerminal     Boolean @default(false)
-  category       String  @default("open")
+  color          String   @default("zinc")
+  sortOrder      Int      @default(0)
+  isTerminal     Boolean  @default(false)
+  category       String   @default("open")
+  /// Status keys this status may move to. Empty means "no restriction",
+  /// which keeps custom statuses usable before an org configures its flow.
+  allowedNext    String[] @default([])
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, key])
+}
+
+/// Per-organization order number sequence. A dedicated counter row is
+/// incremented atomically so concurrent creates cannot collide, which
+/// `count() + 1` allowed.
+model OrderCounter {
+  organizationId String   @id
+  value          Int      @default(0)
+  updatedAt      DateTime @updatedAt
 }
 
 model Store {
@@ -423,6 +439,7 @@ model Order {
   @@unique([organizationId, number])
   @@index([organizationId, createdAt])
   @@index([organizationId, status])
+  @@index([organizationId, status, createdAt])
   @@index([organizationId, agentId])
   @@index([organizationId, storeId])
   @@index([customerId])
@@ -532,29 +549,139 @@ model Carrier {
   credentialsEnc String?
   pickupWindow   String?
   deliveredRate  Int     @default(85)
+  /// Days after hand-off before an unsettled delivered shipment is flagged.
+  settlementDays Int     @default(14)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   shipments    Shipment[]
+  rates        CarrierRate[]
+  remittances  Remittance[]
 }
 
-model Shipment {
+/// Price grid used to cost a shipment instead of guessing a flat fee.
+/// The most specific match wins: the city rate, then the carrier default.
+/// An empty city is the default row — Postgres treats NULLs as distinct, so a
+/// nullable column could not keep the default unique per carrier.
+model CarrierRate {
   id             String   @id @default(uuid())
   organizationId String
-  orderId        String
-  carrierId      String?
-  awb            String?
-  status         String   @default("created")
-  labelUrl       String?
-  trackingUrl    String?
+  carrierId      String
+  city           String   @default("")
+  deliveryFee    Decimal  @default(0) @db.Decimal(12, 2)
+  returnFee      Decimal  @default(0) @db.Decimal(12, 2)
+  /// Commission the carrier keeps on the cash it collects, in percent.
+  codFeePercent  Decimal  @default(0) @db.Decimal(5, 2)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  carrier      Carrier?     @relation(fields: [carrierId], references: [id])
+  carrier      Carrier      @relation(fields: [carrierId], references: [id], onDelete: Cascade)
+
+  @@unique([carrierId, city])
+  @@index([organizationId, city])
+}
+
+model Shipment {
+  id               String    @id @default(uuid())
+  organizationId   String
+  orderId          String
+  carrierId        String?
+  awb              String?
+  status           String    @default("created")
+  labelUrl         String?
+  trackingUrl      String?
+  /// Cash the carrier is expected to collect on delivery.
+  codAmount        Decimal   @default(0) @db.Decimal(12, 2)
+  /// Cash actually reported by the carrier statement.
+  codCollected     Decimal?  @db.Decimal(12, 2)
+  shippingCost     Decimal   @default(0) @db.Decimal(12, 2)
+  returnFee        Decimal   @default(0) @db.Decimal(12, 2)
+  codFee           Decimal   @default(0) @db.Decimal(12, 2)
+  deliveryAttempts Int       @default(0)
+  lastStatusDetail String?
+  lastSyncAt       DateTime?
+  deliveredAt      DateTime?
+  settledAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  order           Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  carrier         Carrier?         @relation(fields: [carrierId], references: [id])
+  events          ShipmentEvent[]
+  remittanceLines RemittanceLine[]
 
   @@index([organizationId, createdAt])
+  @@index([organizationId, status])
   @@index([awb])
+  @@index([organizationId, settledAt])
+}
+
+model ShipmentEvent {
+  id         String   @id @default(uuid())
+  shipmentId String
+  status     String
+  detail     String?
+  source     String   @default("sync")
+  createdAt  DateTime @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, createdAt])
+}
+
+/// A carrier payout statement: the cash a carrier says it is transferring for
+/// a batch of delivered COD shipments.
+model Remittance {
+  id             String    @id @default(uuid())
+  organizationId String
+  carrierId      String?
+  reference      String
+  status         String    @default("draft")
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  /// Total the carrier declares on the statement.
+  declaredTotal  Decimal   @default(0) @db.Decimal(12, 2)
+  /// Sum of lines matched to a shipment we know about.
+  matchedTotal   Decimal   @default(0) @db.Decimal(12, 2)
+  expectedTotal  Decimal   @default(0) @db.Decimal(12, 2)
+  feeTotal       Decimal   @default(0) @db.Decimal(12, 2)
+  varianceTotal  Decimal   @default(0) @db.Decimal(12, 2)
+  note           String?
+  settledAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  carrier      Carrier?         @relation(fields: [carrierId], references: [id])
+  lines        RemittanceLine[]
+
+  @@unique([organizationId, reference])
+  @@index([organizationId, status])
+}
+
+model RemittanceLine {
+  id             String   @id @default(uuid())
+  organizationId String
+  remittanceId   String
+  shipmentId     String?
+  orderId        String?
+  awb            String
+  /// matched | variance | unmatched | duplicate
+  status         String   @default("unmatched")
+  declaredAmount Decimal  @default(0) @db.Decimal(12, 2)
+  expectedAmount Decimal  @default(0) @db.Decimal(12, 2)
+  feeAmount      Decimal  @default(0) @db.Decimal(12, 2)
+  variance       Decimal  @default(0) @db.Decimal(12, 2)
+  note           String?
+  createdAt      DateTime @default(now())
+
+  remittance Remittance @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
+  shipment   Shipment?  @relation(fields: [shipmentId], references: [id])
+
+  @@unique([remittanceId, awb])
+  @@index([organizationId, awb])
+  @@index([organizationId, status])
 }
 
 model ReturnCase {
@@ -691,11 +818,66 @@ model ApiKey {
   name           String
   prefix         String
   hash           String    @unique
+  /// Permission keys this key may exercise. A key is never more powerful than
+  /// its scopes, regardless of the role it resolves through.
+  scopes         String[]  @default([])
   lastUsedAt     DateTime?
+  expiresAt      DateTime?
   createdAt      DateTime  @default(now())
   revokedAt      DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+/// Raw webhook deliveries received from storefronts and carriers. Stored before
+/// processing so a retry from the sender is deduplicated and a failed mapping
+/// can be replayed instead of lost.
+model InboundEvent {
+  id             String    @id @default(uuid())
+  organizationId String
+  provider       String
+  externalId     String
+  topic          String
+  /// received | processed | ignored | failed
+  status         String    @default("received")
+  payload        Json
+  headers        Json      @default("{}")
+  orderId        String?
+  error          String?
+  attempts       Int       @default(0)
+  createdAt      DateTime  @default(now())
+  processedAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider, externalId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+}
+
+/// Progress record for work moved off the request path (CSV import, bulk
+/// actions) so the UI can poll instead of holding an HTTP connection open.
+model JobRun {
+  id             String    @id @default(uuid())
+  organizationId String
+  kind           String
+  /// queued | running | completed | failed
+  status         String    @default("queued")
+  total          Int       @default(0)
+  processed      Int       @default(0)
+  failed         Int       @default(0)
+  result         Json      @default("{}")
+  errors         Json      @default("[]")
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
 }
 
 model Notification {
