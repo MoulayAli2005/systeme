@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { MarketingFooter, MarketingNav } from "@/components/marketing";
 import { LogoMark } from "@/components/brand";
+import { ShopifyLogo } from "@/components/shopify-logo";
 
 const logos = [
   "Shopify",
@@ -304,8 +305,15 @@ export default function HomePage() {
             ["Ozon / Ameex / Aramex", "Labels + AWB"],
           ].map(([n, d]) => (
             <div key={n} className="rounded-2xl border border-sand bg-white p-4">
-              <div className="text-sm font-semibold">{n}</div>
-              <div className="mt-1 text-xs text-zinc-500">{d}</div>
+              <div className="flex items-center gap-3">
+                {n === "Shopify" ? (
+                  <ShopifyLogo className="h-9 w-9 shrink-0" />
+                ) : null}
+                <div>
+                  <div className="text-sm font-semibold">{n}</div>
+                  <div className="mt-1 text-xs text-zinc-500">{d}</div>
+                </div>
+              </div>
             </div>
           ))}
         </div>
