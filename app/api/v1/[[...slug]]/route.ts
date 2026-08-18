@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { errorResponse, json, parsePage, ApiError } from "@/server/http";
+import { errorResponse, json, parsePage, cursorArgs, withCursor, ApiError } from "@/server/http";
+import { toCsv } from "@/server/csv";
 import { requireAuth, requirePermission, requirePlatformAdmin, sessionCookie, clearSessionCookie, resolveAuth } from "@/server/auth/session";
 import * as auth from "@/server/auth/service";
 import * as orders from "@/server/modules/orders/service";
+import { BULK_ACTIONS, startBulk } from "@/server/modules/orders/bulk";
+import { createShipmentForOrder, overdueSettlements } from "@/server/modules/shipping/service";
 import * as analytics from "@/server/modules/analytics/service";
 import * as ai from "@/server/modules/ai/service";
 import { prisma } from "@/server/db";
@@ -12,6 +15,8 @@ import { messagingProvider, phoneProvider, shippingProvider } from "@/server/pro
 import { enqueue } from "@/server/jobs/queues";
 import { health } from "@/server/health";
 import { handleExtra } from "@/server/api/extra";
+import { handleFinance } from "@/server/api/finance";
+import { handleOps } from "@/server/api/ops";
 import { enforceRateLimit, RATE_LIMITS } from "@/server/ratelimit";
 import { log, requestIdOf } from "@/server/log";
 import { clientIp, identityKey } from "@/server/request";
@@ -61,6 +66,12 @@ async function handle(req: NextRequest, params: { slug?: string[] }, method: str
 async function route(req: NextRequest, method: string, path: string, url: URL, body: unknown): Promise<Response> {
   const extra = await handleExtra(req, method, path, url, body, ip(req));
   if (extra) return extra;
+
+  const finance = await handleFinance(req, method, path, url, body, ip(req));
+  if (finance) return finance;
+
+  const ops = await handleOps(req, method, path, url, body);
+  if (ops) return ops;
 
   if (path.startsWith("track/") && method === "GET") {
     // Public and unauthenticated: without a budget this endpoint lets anyone
@@ -192,7 +203,9 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
   if (path.match(/^orders\/[^/]+\/status$/) && method === "POST") {
     const ctx = await requirePermission("orders.confirm", req);
     const id = path.split("/")[1];
-    const status = z.object({ status: z.string(), note: z.string().optional() }).parse(body);
+    const status = z
+      .object({ status: z.string(), note: z.string().optional(), force: z.boolean().optional() })
+      .parse(body);
     return json(
       await orders.changeStatus({
         organizationId: ctx.organizationId,
@@ -201,19 +214,22 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
         status: status.status,
         note: status.note,
         ip: ip(req),
+        // Only workspace administrators may step outside the configured flow.
+        force: status.force === true && ctx.permissions.includes("settings.manage"),
       }),
     );
   }
   if (path === "orders/bulk" && method === "POST") {
     const ctx = await requirePermission("orders.bulk", req);
+    await enforceRateLimit(`bulk:${ctx.organizationId}`, RATE_LIMITS.bulk);
     const data = z
       .object({
-        ids: z.array(z.string()).min(1),
-        action: z.enum(["status", "assign", "tag", "untag", "whatsapp", "sms", "ship"]),
+        ids: z.array(z.string()).min(1).max(5000),
+        action: z.enum(BULK_ACTIONS),
         value: z.string().optional(),
       })
       .parse(body);
-    return json(await orders.bulkOrders({ organizationId: ctx.organizationId, userId: ctx.userId, ...data }));
+    return json(await startBulk({ organizationId: ctx.organizationId, userId: ctx.userId, ...data }));
   }
 
   if (path === "customers" && method === "GET") {
@@ -232,11 +248,11 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
             }
           : {}),
       },
-      take: page.take,
+      ...cursorArgs(page),
       orderBy: { createdAt: "desc" },
       include: { _count: { select: { orders: true } } },
     });
-    return json({ rows });
+    return json(withCursor(rows, page));
   }
   if (path.startsWith("customers/") && method === "GET") {
     const ctx = await requirePermission("customers.read", req);
@@ -256,23 +272,38 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
       where: {
         organizationId: ctx.organizationId,
         deletedAt: null,
-        ...(page.q ? { name: { contains: page.q, mode: "insensitive" } } : {}),
+        ...(page.q
+          ? {
+              OR: [
+                { name: { contains: page.q, mode: "insensitive" } },
+                { sku: { contains: page.q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
       },
-      take: page.take,
+      ...cursorArgs(page),
       include: { variants: { include: { inventory: true } } },
-      orderBy: { name: "asc" },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
     });
-    return json({ rows });
+    return json(withCursor(rows, page));
   }
 
   if (path === "inventory" && method === "GET") {
     const ctx = await requirePermission("inventory.read", req);
+    const page = parsePage(url);
     const rows = await prisma.inventoryItem.findMany({
-      where: { organizationId: ctx.organizationId },
+      where: {
+        organizationId: ctx.organizationId,
+        ...(url.searchParams.get("warehouseId")
+          ? { warehouseId: url.searchParams.get("warehouseId")! }
+          : {}),
+        ...(url.searchParams.get("lowStock") === "true" ? { onHand: { lte: 5 } } : {}),
+      },
       include: { variant: { include: { product: true } }, warehouse: true },
-      take: 200,
+      ...cursorArgs(page),
+      orderBy: [{ onHand: "asc" }, { id: "asc" }],
     });
-    return json({ rows });
+    return json(withCursor(rows, page));
   }
 
   if (path === "stores" && method === "GET") {
@@ -341,13 +372,20 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
 
   if (path === "inbox" && method === "GET") {
     const ctx = await requirePermission("inbox.read", req);
+    const page = parsePage(url);
     const rows = await prisma.conversation.findMany({
       where: { organizationId: ctx.organizationId },
-      include: { customer: true, messages: { orderBy: { createdAt: "asc" }, take: 50 } },
-      orderBy: { lastAt: "desc" },
-      take: 50,
+      include: { customer: true, messages: { orderBy: { createdAt: "desc" }, take: 50 } },
+      orderBy: [{ lastAt: "desc" }, { id: "asc" }],
+      ...cursorArgs(page),
     });
-    return json({ rows });
+    // Messages are fetched newest-first so the take limit keeps the latest of a
+    // long thread, then flipped back for display.
+    const result = withCursor(rows, page);
+    return json({
+      ...result,
+      rows: result.rows.map((row) => ({ ...row, messages: [...row.messages].reverse() })),
+    });
   }
   if (path.match(/^inbox\/[^/]+\/messages$/) && method === "POST") {
     const ctx = await requirePermission("inbox.write", req);
@@ -378,45 +416,43 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
 
   if (path === "shipments" && method === "GET") {
     const ctx = await requirePermission("shipping.read", req);
+    const page = parsePage(url);
+    const status = url.searchParams.get("status");
     const rows = await prisma.shipment.findMany({
-      where: { organizationId: ctx.organizationId },
+      where: {
+        organizationId: ctx.organizationId,
+        ...(status ? { status } : {}),
+        ...(url.searchParams.get("unsettled") === "true"
+          ? { settledAt: null, status: "delivered" }
+          : {}),
+      },
       include: { order: { include: { customer: true } }, carrier: true },
-      orderBy: { createdAt: "desc" },
-      take: 50,
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      ...cursorArgs(page),
     });
-    return json({ rows });
+    return json(withCursor(rows, page));
   }
   if (path === "shipments" && method === "POST") {
     const ctx = await requirePermission("shipping.dispatch", req);
-    const data = z.object({ orderIds: z.array(z.string()), carrierId: z.string().optional() }).parse(body);
+    const data = z
+      .object({ orderIds: z.array(z.string()).min(1).max(500), carrierId: z.string().optional() })
+      .parse(body);
     const created = [];
+    const failed: Array<{ orderId: string; message: string }> = [];
     for (const orderId of data.orderIds) {
-      const order = await prisma.order.findFirst({
-        where: { id: orderId, organizationId: ctx.organizationId },
-        include: { customer: true },
-      });
-      if (!order) continue;
-      const ship = await shippingProvider().createShipment({
-        orderId: order.id,
-        city: order.customer.city,
-        address: order.customer.address ?? order.customer.city,
-        phone: order.customer.phone,
-        codAmount: Number(order.codAmount),
-      });
-      created.push(
-        await prisma.shipment.create({
-          data: {
-            organizationId: ctx.organizationId,
-            orderId: order.id,
-            carrierId: data.carrierId,
-            awb: ship.awb,
-            trackingUrl: ship.trackingUrl,
-          },
-        }),
-      );
-      await prisma.order.update({ where: { id: order.id }, data: { status: "SHIPPED" } });
+      try {
+        const result = await createShipmentForOrder({
+          organizationId: ctx.organizationId,
+          orderId,
+          carrierId: data.carrierId,
+          userId: ctx.userId,
+        });
+        if (result.created) created.push(result.shipment);
+      } catch (err) {
+        failed.push({ orderId, message: err instanceof Error ? err.message : "Unknown error" });
+      }
     }
-    return json({ created });
+    return json({ created, failed });
   }
   if (path === "carriers" && method === "GET") {
     const ctx = await requireAuth(req);
@@ -425,12 +461,17 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
 
   if (path === "returns" && method === "GET") {
     const ctx = await requirePermission("returns.read", req);
+    const page = parsePage(url);
     const rows = await prisma.returnCase.findMany({
-      where: { organizationId: ctx.organizationId },
+      where: {
+        organizationId: ctx.organizationId,
+        ...(url.searchParams.get("status") ? { status: url.searchParams.get("status")! } : {}),
+      },
       include: { order: { include: { customer: true, items: true } } },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      ...cursorArgs(page),
     });
-    return json({ rows });
+    return json(withCursor(rows, page));
   }
   if (path.match(/^returns\/[^/]+$/) && method === "PATCH") {
     const ctx = await requirePermission("returns.write", req);
@@ -537,33 +578,40 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
 
   if (path === "notifications" && method === "GET") {
     const ctx = await requireAuth(req);
-    return json({
-      rows: await prisma.notification.findMany({
-        where: { organizationId: ctx.organizationId },
-        orderBy: { createdAt: "desc" },
-        take: 30,
-      }),
+    const page = parsePage(url);
+    const rows = await prisma.notification.findMany({
+      where: {
+        organizationId: ctx.organizationId,
+        ...(url.searchParams.get("unread") === "true" ? { readAt: null } : {}),
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      ...cursorArgs(page),
     });
+    return json(withCursor(rows, page));
   }
   if (path === "tasks" && method === "GET") {
     const ctx = await requireAuth(req);
-    return json({
-      rows: await prisma.task.findMany({
-        where: { organizationId: ctx.organizationId },
-        include: { assignee: { select: { name: true } } },
-        orderBy: { createdAt: "desc" },
-      }),
+    const page = parsePage(url);
+    const rows = await prisma.task.findMany({
+      where: {
+        organizationId: ctx.organizationId,
+        ...(url.searchParams.get("status") ? { status: url.searchParams.get("status")! } : {}),
+      },
+      include: { assignee: { select: { name: true } } },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      ...cursorArgs(page),
     });
+    return json(withCursor(rows, page));
   }
   if (path === "audit" && method === "GET") {
     const ctx = await requirePermission("settings.manage", req);
-    return json({
-      rows: await prisma.auditLog.findMany({
-        where: { organizationId: ctx.organizationId },
-        orderBy: { createdAt: "desc" },
-        take: 100,
-      }),
+    const page = parsePage(url);
+    const rows = await prisma.auditLog.findMany({
+      where: { organizationId: ctx.organizationId },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      ...cursorArgs(page),
     });
+    return json(withCursor(rows, page));
   }
   if (path === "billing" && method === "GET") {
     const ctx = await requirePermission("billing.read", req);
@@ -585,20 +633,88 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
   }
   if (path === "export/orders" && method === "GET") {
     const ctx = await requirePermission("orders.read", req);
-    const rows = await prisma.order.findMany({
-      where: { organizationId: ctx.organizationId },
-      include: { customer: true, items: true },
-      take: 5000,
+    const status = url.searchParams.get("status");
+    const where = {
+      organizationId: ctx.organizationId,
+      deletedAt: null,
+      ...(status ? { status } : {}),
+    };
+
+    // Streamed in keyset pages: the response starts immediately and memory
+    // stays flat regardless of how many orders the workspace has.
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            toCsv([
+              [
+                "number",
+                "status",
+                "customer",
+                "phone",
+                "city",
+                "total",
+                "cod",
+                "source",
+                "agent",
+                "awb",
+                "createdAt",
+              ],
+            ]) + "\n",
+          ),
+        );
+
+        let cursor: string | undefined;
+        try {
+          for (;;) {
+            const batch = await prisma.order.findMany({
+              where,
+              include: {
+                customer: { select: { name: true, phone: true, city: true } },
+                agent: { select: { name: true } },
+                shipments: { select: { awb: true }, take: 1, orderBy: { createdAt: "desc" } },
+              },
+              orderBy: { id: "asc" },
+              take: 500,
+              ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+            });
+            if (!batch.length) break;
+
+            controller.enqueue(
+              encoder.encode(
+                toCsv(
+                  batch.map((o) => [
+                    o.number,
+                    o.status,
+                    o.customer.name,
+                    o.customer.phone,
+                    o.customer.city,
+                    Number(o.total),
+                    Number(o.codAmount),
+                    o.source,
+                    o.agent?.name ?? "",
+                    o.shipments[0]?.awb ?? "",
+                    o.createdAt.toISOString(),
+                  ]),
+                ) + "\n",
+              ),
+            );
+            cursor = batch[batch.length - 1].id;
+            if (batch.length < 500) break;
+          }
+          controller.close();
+        } catch (err) {
+          controller.error(err);
+        }
+      },
     });
-    const header = "number,status,customer,phone,city,total,source,createdAt";
-    const csv = [
-      header,
-      ...rows.map((o) =>
-        [o.number, o.status, o.customer.name, o.customer.phone, o.customer.city, o.total, o.source, o.createdAt.toISOString()].join(","),
-      ),
-    ].join("\n");
-    return new Response(csv, {
-      headers: { "Content-Type": "text/csv", "Content-Disposition": "attachment; filename=orders.csv" },
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename=orders-${new Date().toISOString().slice(0, 10)}.csv`,
+      },
     });
   }
 

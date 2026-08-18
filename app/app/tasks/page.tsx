@@ -19,7 +19,7 @@ export default function TasksPage() {
           dueAt: string | null;
           assignee: { name: string } | null;
         }>;
-      }>("/api/v1/tasks"),
+      }>("/api/v1/tasks?limit=100"),
   });
   const create = useMutation({
     mutationFn: (body: { title: string; priority: string }) =>

@@ -17,7 +17,7 @@ type Conv = {
 
 export default function InboxPage() {
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["inbox"], queryFn: () => api<{ rows: Conv[] }>("/api/v1/inbox") });
+  const q = useQuery({ queryKey: ["inbox"], queryFn: () => api<{ rows: Conv[] }>("/api/v1/inbox?limit=50") });
   const [active, setActive] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const conv = (q.data?.rows ?? []).find((c) => c.id === active) ?? q.data?.rows[0];

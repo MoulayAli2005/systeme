@@ -17,7 +17,7 @@ export default function ShippingPage() {
     queryFn: () =>
       api<{
         rows: Array<{ id: string; awb: string | null; status: string; order: { number: string; customer: { name: string } } }>;
-      }>("/api/v1/shipments"),
+      }>("/api/v1/shipments?limit=50"),
   });
   const carriers = useQuery({
     queryKey: ["carriers"],

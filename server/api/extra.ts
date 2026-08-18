@@ -7,6 +7,7 @@ import { randomToken, sha256 } from "../crypto";
 import { writeAudit } from "../audit";
 import { env } from "../env";
 import { PLANS } from "../modules/billing/plans";
+import { API_KEY_DEFAULT_SCOPES, API_KEY_GRANTABLE, isPermissionKey } from "../rbac/catalog";
 import { adjustStock } from "../modules/inventory/service";
 import { assignNext, setPresence, type DispatchStrategy } from "../modules/call-center/dispatch";
 import { agentLeaderboard } from "../modules/analytics/service";
@@ -317,20 +318,58 @@ export async function handleExtra(
     const ctx = await requirePermission("integrations.manage", req);
     const rows = await prisma.apiKey.findMany({
       where: { organizationId: ctx.organizationId },
-      select: { id: true, name: true, prefix: true, lastUsedAt: true, createdAt: true, revokedAt: true },
+      select: {
+        id: true,
+        name: true,
+        prefix: true,
+        scopes: true,
+        lastUsedAt: true,
+        expiresAt: true,
+        createdAt: true,
+        revokedAt: true,
+      },
+      orderBy: { createdAt: "desc" },
     });
-    return json({ rows });
+    return json({
+      rows: rows.map((row) => ({
+        ...row,
+        // Surfaced so the UI can explain what a key with no explicit scopes can do.
+        effectiveScopes: row.scopes.length ? row.scopes : API_KEY_DEFAULT_SCOPES,
+      })),
+      grantable: API_KEY_GRANTABLE,
+    });
   }
   if (path === "api-keys" && method === "POST") {
     const ctx = await requirePermission("integrations.manage", req);
-    const name = z.object({ name: z.string().min(2) }).parse(body).name;
+    const data = z
+      .object({
+        name: z.string().min(2),
+        scopes: z.array(z.string()).optional(),
+        expiresInDays: z.number().int().positive().max(3650).optional(),
+      })
+      .parse(body);
+
+    const requested = data.scopes?.filter(isPermissionKey) ?? [];
+    const rejected = (data.scopes ?? []).filter((s) => !API_KEY_GRANTABLE.includes(s as never));
+    if (rejected.length) {
+      throw new ApiError(
+        400,
+        "SCOPE_NOT_GRANTABLE",
+        `These scopes cannot be given to an API key: ${rejected.join(", ")}.`,
+      );
+    }
+
     const secret = `nxk_${randomToken(24)}`;
     const row = await prisma.apiKey.create({
       data: {
         organizationId: ctx.organizationId,
-        name,
+        name: data.name,
         prefix: secret.slice(0, 12),
         hash: sha256(secret),
+        scopes: requested,
+        expiresAt: data.expiresInDays
+          ? new Date(Date.now() + data.expiresInDays * 864e5)
+          : null,
       },
     });
     await writeAudit({
@@ -339,9 +378,14 @@ export async function handleExtra(
       action: "api_key.create",
       entity: "ApiKey",
       entityId: row.id,
+      after: { scopes: requested, expiresAt: row.expiresAt },
       ip,
     });
-    return json({ id: row.id, prefix: row.prefix, secret }, 201);
+    // The secret is shown once; only its hash is stored.
+    return json(
+      { id: row.id, prefix: row.prefix, secret, scopes: requested, expiresAt: row.expiresAt },
+      201,
+    );
   }
   if (path.match(/^api-keys\/[^/]+$/) && method === "DELETE") {
     const ctx = await requirePermission("integrations.manage", req);
@@ -367,38 +411,6 @@ export async function handleExtra(
       );
     }
     return json({ url: null, message: "Stripe checkout session would be created here with the configured secret." });
-  }
-
-  if (path === "import/orders" && method === "POST") {
-    const ctx = await requirePermission("orders.write", req);
-    const data = z
-      .object({
-        rows: z.array(
-          z.object({
-            name: z.string(),
-            phone: z.string(),
-            city: z.string(),
-            address: z.string().optional(),
-            product: z.string(),
-            quantity: z.number().int().positive().optional(),
-            price: z.number(),
-          }),
-        ),
-      })
-      .parse(body);
-    const created = [];
-    for (const row of data.rows.slice(0, 200)) {
-      created.push(
-        await orders.createOrder({
-          organizationId: ctx.organizationId,
-          userId: ctx.userId,
-          customer: { name: row.name, phone: row.phone, city: row.city, address: row.address },
-          items: [{ name: row.product, quantity: row.quantity ?? 1, price: row.price }],
-          source: "import",
-        }),
-      );
-    }
-    return json({ created: created.length });
   }
 
   if (path === "templates" && method === "GET") {
