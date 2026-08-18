@@ -8,7 +8,9 @@ export type ChatTurn = { role: "user" | "assistant"; content: string };
 const PRODUCT_FACTS = `
 Nexora is a multi-tenant cash-on-delivery (COD) operations platform for e-commerce teams, especially in Morocco and MENA.
 It covers: order confirmation (WhatsApp/call center), carrier dispatch, tracking, returns, COD remittance matching, inventory, automations, analytics and a workspace AI copilot.
-Stack: Next.js, PostgreSQL, Redis, BullMQ. Integrations: Shopify, WooCommerce, YouCan, WhatsApp (Twilio), Ozon Express, Ameex, Aramex.
+Stack: Next.js, PostgreSQL, Redis, BullMQ.
+Official partners: Shopify, YouCan, Dropify, and Moroccan carriers including Ozon Express, Ameex, Aramex, Sendit, Cathedis, Chronopost Maroc, CTM, Tawssil, DHL Express and Olivraison. Any other carrier with an HTTP API can be connected.
+Integrations also include WooCommerce, WhatsApp (Twilio), Google Sheets, Meta and TikTok.
 Pricing: Free, Starter, Pro, Business, Enterprise — see /pricing. 7-day sandbox, no card required.
 Demo login after seed: amine@atlasatelier.ma / demo1234 (Atlas Atelier owner). A second tenant exists (Casa Home) so isolation can be shown.
 The in-app assistant is named Noor and answers in French, Arabic, English and Darija.
@@ -55,15 +57,15 @@ export function publicReply(question: string): { answer: string; provider: "faq"
     };
   }
 
-  if (/\b(transporteur|carrier|ozon|ameex|aramex|livreur|شحن|ناقل)\b/.test(q)) {
+  if (/\b(transporteur|carrier|ozon|ameex|aramex|livreur|shopify|youcan|dropify|شحن|ناقل|شريك|partenaire|partner)\b/.test(q)) {
     return {
       provider: "faq",
       answer:
         lang === "ar"
-          ? "Nexora يتعامل مع Ozon Express و Ameex و Aramex و أي API عام. الكتالوج حسب المدينة، والتتبع يحدّث الحالة تلقائياً."
+          ? "Nexora شريك Shopify و YouCan و Dropify، وكيتصل بـ Ozon Express و Ameex و Aramex و Sendit و Cathedis و Chronopost و CTM و Tawssil و DHL و Olivraison، أو أي API عام. الكتالوج حسب المدينة، والتتبع يحدّث الحالة تلقائياً."
           : lang === "fr"
-            ? "Ozon Express, Ameex, Aramex, plus un adaptateur HTTP générique. La grille tarifaire est par ville ; le tracking met à jour la commande tout seul."
-            : "Ozon Express, Ameex, Aramex, plus a generic HTTP carrier. Rates are per city; tracking updates the order without anyone clicking.",
+            ? "Nexora est partenaire de Shopify, YouCan et Dropify, et se connecte à Ozon Express, Ameex, Aramex, Sendit, Cathedis, Chronopost, CTM, Tawssil, DHL, Olivraison, plus n'importe quelle API transporteur. La grille tarifaire est par ville ; le tracking met à jour la commande tout seul."
+            : "Nexora partners with Shopify, YouCan and Dropify, and connects to Ozon Express, Ameex, Aramex, Sendit, Cathedis, Chronopost, CTM, Tawssil, DHL, Olivraison, plus any HTTP carrier. Rates are per city; tracking updates the order without anyone clicking.",
     };
   }
 

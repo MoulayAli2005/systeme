@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Wordmark } from "./brand";
 import { LanguageSwitcher, useT } from "./i18n";
+import { ALL_PARTNERS, PartnerLogo } from "./partners";
+import { cn } from "@/lib/format";
 
 export function MarketingNav({ dark = false }: { dark?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -85,6 +87,20 @@ export function MarketingFooter() {
           </p>
           <div className="mt-4">
             <LanguageSwitcher />
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            {ALL_PARTNERS.map((partner) => (
+              <span
+                key={partner.id}
+                className={cn(
+                  "flex h-9 items-center justify-center rounded-lg px-2",
+                  partner.onDark ? "bg-ink" : "bg-white ring-1 ring-sand",
+                )}
+                title={partner.name}
+              >
+                <PartnerLogo partner={partner} className="h-5 w-auto max-w-[72px]" />
+              </span>
+            ))}
           </div>
         </div>
         {[

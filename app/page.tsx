@@ -12,20 +12,7 @@ import {
 } from "lucide-react";
 import { MarketingFooter, MarketingNav } from "@/components/marketing";
 import { LogoMark } from "@/components/brand";
-import { IntegrationLogo, type IntegrationId } from "@/components/integration-logos";
-
-const logos = [
-  "Shopify",
-  "WooCommerce",
-  "YouCan",
-  "WhatsApp",
-  "Instagram",
-  "Ozon Express",
-  "Ameex",
-  "Aramex",
-  "Google Sheets",
-  "TikTok",
-];
+import { PartnerShowcase, PartnerStrip } from "@/components/partner-section";
 
 export default function HomePage() {
   return (
@@ -81,22 +68,7 @@ export default function HomePage() {
             <HeroBoard />
           </div>
         </section>
-        <div className="border-t border-white/10 py-6">
-          <div className="mx-auto max-w-6xl overflow-hidden px-5">
-            <p className="mb-4 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-white/40">
-              Connects to the stack you already run
-            </p>
-            <div className="flex overflow-hidden">
-              <div className="animate-marquee flex min-w-full gap-10 pr-10 text-sm font-medium text-white/55">
-                {[...logos, ...logos].map((l, i) => (
-                  <span key={i} className="whitespace-nowrap">
-                    {l}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <PartnerStrip />
       </div>
 
       <section className="mx-auto max-w-6xl px-5 py-20">
@@ -286,49 +258,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section id="integrations" className="mx-auto max-w-6xl px-5 py-20">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-          Go live on your existing stack
-        </p>
-        <h2 className="font-display mt-3 max-w-xl text-3xl tracking-tight">
-          Stores, ads, WhatsApp and carriers. One click each.
-        </h2>
-        <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {(
-            [
-              ["Shopify", "Official sync", "shopify"],
-              ["WooCommerce", "Orders + stock", "woocommerce"],
-              ["YouCan", "MENA stores", "youcan"],
-              ["Google Sheets", "Import in 2 min", "sheets"],
-              ["Facebook Leads", "Forms → orders", "facebook"],
-              ["TikTok Forms", "Spark ads", "tiktok"],
-              ["WhatsApp API", "Green tick", "whatsapp"],
-              ["Ozon Express", "Labels + AWB", "ozon"],
-              ["Ameex", "Labels + AWB", "ameex"],
-              ["Aramex", "Labels + AWB", "aramex"],
-            ] as const satisfies ReadonlyArray<readonly [string, string, IntegrationId]>
-          ).map(([n, d, logo]) => (
-            <div key={n} className="rounded-2xl border border-sand bg-white p-4">
-              <div className="flex items-center gap-3">
-                <IntegrationLogo
-                  id={logo}
-                  className={
-                    logo === "woocommerce"
-                      ? "h-8 w-12 shrink-0"
-                      : logo === "aramex"
-                        ? "h-3.5 w-12 shrink-0"
-                        : "h-9 w-9 shrink-0 object-contain"
-                  }
-                />
-                <div>
-                  <div className="text-sm font-semibold">{n}</div>
-                  <div className="mt-1 text-xs text-zinc-500">{d}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      <PartnerShowcase />
 
       <section className="mx-auto max-w-6xl px-5 pb-8">
         <div className="grid gap-6 md:grid-cols-3">

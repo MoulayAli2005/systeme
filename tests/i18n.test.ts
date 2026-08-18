@@ -37,7 +37,8 @@ describe("i18n", () => {
     expect(translate("fr", "login.submit")).toBe("Se connecter");
     expect(translate("en", "login.submit")).toBe("Sign in");
     expect(translate("ar", "login.submit")).toBe("دخول");
-    expect(translate("fr", "nav.signIn")).toBe("Connexion");
-    expect(translate("ar", "app.orders")).toBe("الطلبات");
+    expect(translate("fr", "partners.kicker")).toBe("Partenaire officiel");
+    expect(translate("en", "partners.title")).toMatch(/Shopify/);
+    expect(translate("ar", "partners.carriers")).toMatch(/المغرب/);
   });
 });

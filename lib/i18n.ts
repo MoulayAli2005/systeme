@@ -85,6 +85,14 @@ type Dict = {
     newHere: string;
     create: string;
   };
+  partners: {
+    kicker: string;
+    title: string;
+    subtitle: string;
+    stores: string;
+    carriers: string;
+    more: string;
+  };
 };
 
 export const DICTIONARIES: Record<Locale, Dict> = {
@@ -155,6 +163,15 @@ export const DICTIONARIES: Record<Locale, Dict> = {
       newHere: "Nouveau ?",
       create: "Créer un espace",
     },
+    partners: {
+      kicker: "Partenaire officiel",
+      title: "Shopify, YouCan, Dropify — et toutes les sociétés de livraison au Maroc.",
+      subtitle:
+        "Nexora se connecte à votre boutique et à vos contrats transporteurs. Labels, AWB et suivi, sans changer d'outil.",
+      stores: "Boutiques partenaires",
+      carriers: "Livraison partout au Maroc",
+      more: "Plus tout transporteur avec une API HTTP — vos contrats, vos tarifs.",
+    },
   },
   en: {
     language: "Language",
@@ -218,6 +235,15 @@ export const DICTIONARIES: Record<Locale, Dict> = {
       newHere: "New here?",
       create: "Create a workspace",
     },
+    partners: {
+      kicker: "Official partner",
+      title: "Shopify, YouCan, Dropify — and every delivery company in Morocco.",
+      subtitle:
+        "Nexora connects to your store and your carrier contracts. Labels, AWBs and tracking, without switching tools.",
+      stores: "Store partners",
+      carriers: "Delivery across Morocco",
+      more: "Plus any carrier with an HTTP API — your contracts, your rates.",
+    },
   },
   ar: {
     language: "اللغة",
@@ -280,6 +306,15 @@ export const DICTIONARIES: Record<Locale, Dict> = {
       newHere: "جديد هنا؟",
       create: "إنشاء مساحة",
     },
+    partners: {
+      kicker: "شريك رسمي",
+      title: "Shopify و YouCan و Dropify — وكل شركات التوصيل في المغرب.",
+      subtitle:
+        "Nexora تتصل بمتجرك وعقود الناقلين. التيكيت و AWB والتتبع، بلا تبديل أدوات.",
+      stores: "المتاجر الشريكة",
+      carriers: "التوصيل في كل المغرب",
+      more: "وزيادة أي ناقل بـ API HTTP — العقود ديالك، الأسعار ديالك.",
+    },
   },
 };
 
@@ -288,7 +323,8 @@ export type TranslationKey =
   | `nav.${keyof Dict["nav"]}`
   | `app.${keyof Dict["app"]}`
   | `chat.${Exclude<keyof Dict["chat"], "sitePrompts" | "opsPrompts">}`
-  | `login.${keyof Dict["login"]}`;
+  | `login.${keyof Dict["login"]}`
+  | `partners.${keyof Dict["partners"]}`;
 
 export function translate(locale: Locale, key: TranslationKey): string {
   const dict = DICTIONARIES[locale] ?? DICTIONARIES[DEFAULT_LOCALE];
