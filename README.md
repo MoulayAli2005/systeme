@@ -76,3 +76,46 @@ npm run lint
 - Run `npm run db:deploy` then `npm run start`
 - Put `npm run worker` behind a process manager
 - Never commit `.env`
+
+## Deploy on Railway
+
+The app listens on `0.0.0.0:$PORT`, runs `prisma migrate deploy` on boot, and health-checks `/api/health`.
+
+1. Open this link and connect the GitHub repo **MoulayAli2005/systeme**:
+   [https://railway.app/new](https://railway.app/new) → **Deploy from GitHub repo**.
+2. Add plugins to the same project:
+   - **Postgres**
+   - **Redis**
+3. On the web service, set variables:
+
+```
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+REDIS_URL=${{Redis.REDIS_URL}}
+JWT_SECRET=<long random string>
+ENCRYPTION_KEY=<64 hex chars>
+APP_URL=https://<your-service>.up.railway.app
+DEMO_MODE=true
+NODE_ENV=production
+```
+
+Generate `ENCRYPTION_KEY`:
+
+```bash
+openssl rand -hex 32
+```
+
+4. **Settings → Networking → Generate domain**.
+5. Optional seed (demo accounts): Railway → service → one-off `npm run db:seed`.
+
+CLI (after `railway login`):
+
+```bash
+npm i -g @railway/cli
+railway login
+railway init
+railway add --database postgres
+railway add --database redis
+railway variables set JWT_SECRET=... ENCRYPTION_KEY=... DEMO_MODE=true
+railway up
+railway domain
+```

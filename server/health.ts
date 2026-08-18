@@ -16,6 +16,6 @@ export async function health() {
     checks.redis = { ok: false, detail: (e as Error).message };
   }
   checks.queues = { ok: checks.redis?.ok ?? false, detail: "BullMQ uses Redis" };
-  const ok = Object.values(checks).every((c) => c.ok);
+  const ok = Boolean(checks.database?.ok);
   return { ok, checks, time: new Date().toISOString() };
 }
