@@ -4,16 +4,18 @@ import Link from "next/link";
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Wordmark } from "./brand";
-
-const links = [
-  { href: "/#product", label: "Product" },
-  { href: "/#inbox", label: "Inbox" },
-  { href: "/pricing", label: "Pricing" },
-  { href: "/#integrations", label: "Integrations" },
-];
+import { LanguageSwitcher, useT } from "./i18n";
 
 export function MarketingNav({ dark = false }: { dark?: boolean }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
+  const links = [
+    { href: "/#product", label: t("nav.product") },
+    { href: "/#inbox", label: t("nav.inbox") },
+    { href: "/pricing", label: t("nav.pricing") },
+    { href: "/#integrations", label: t("nav.integrations") },
+  ];
+
   return (
     <header
       className={`sticky top-0 z-40 ${dark ? "bg-ink/80 text-white" : "bg-paper/80 text-ink"} backdrop-blur-xl`}
@@ -30,22 +32,26 @@ export function MarketingNav({ dark = false }: { dark?: boolean }) {
           ))}
         </nav>
         <div className="hidden items-center gap-2 md:flex">
+          <LanguageSwitcher variant={dark ? "dark" : "light"} />
           <Link
             href="/login"
             className={`rounded-full px-4 py-2 text-sm font-semibold ${dark ? "text-white/80 hover:text-white" : "text-ink/70 hover:text-ink"}`}
           >
-            Sign in
+            {t("nav.signIn")}
           </Link>
           <Link
             href="/signup"
             className="rounded-full bg-mint px-4 py-2 text-sm font-semibold text-ink hover:bg-white"
           >
-            Open demo
+            {t("nav.openDemo")}
           </Link>
         </div>
-        <button className="md:hidden" onClick={() => setOpen(!open)} aria-label="Menu">
-          {open ? <X size={22} /> : <Menu size={22} />}
-        </button>
+        <div className="flex items-center gap-2 md:hidden">
+          <LanguageSwitcher variant={dark ? "dark" : "light"} />
+          <button onClick={() => setOpen(!open)} aria-label="Menu">
+            {open ? <X size={22} /> : <Menu size={22} />}
+          </button>
+        </div>
       </div>
       {open ? (
         <div className="border-t border-white/10 px-5 py-4 md:hidden">
@@ -55,9 +61,9 @@ export function MarketingNav({ dark = false }: { dark?: boolean }) {
                 {l.label}
               </Link>
             ))}
-            <Link href="/login">Sign in</Link>
+            <Link href="/login">{t("nav.signIn")}</Link>
             <Link href="/signup" className="font-semibold text-mint-2">
-              Open demo
+              {t("nav.openDemo")}
             </Link>
           </div>
         </div>
@@ -67,6 +73,7 @@ export function MarketingNav({ dark = false }: { dark?: boolean }) {
 }
 
 export function MarketingFooter() {
+  const t = useT();
   return (
     <footer className="border-t border-sand bg-paper">
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-14 md:grid-cols-4">
@@ -76,32 +83,29 @@ export function MarketingFooter() {
             The operations platform for cash-on-delivery e-commerce teams. Confirmation,
             shipping, inbox, and analytics — one workspace.
           </p>
+          <div className="mt-4">
+            <LanguageSwitcher />
+          </div>
         </div>
         {[
           {
-            h: "Product",
+            h: t("nav.product"),
             items: [
-              ["Confirmation", "/#product"],
-              ["Shipping", "/#product"],
-              ["Inbox", "/#inbox"],
-              ["AI agent", "/#ai"],
+              [t("nav.product"), "/#product"],
+              [t("nav.inbox"), "/#inbox"],
             ],
           },
           {
-            h: "Company",
+            h: t("nav.pricing"),
             items: [
-              ["Pricing", "/pricing"],
-              ["Sign in", "/login"],
-              ["Open demo", "/signup"],
+              [t("nav.pricing"), "/pricing"],
+              [t("nav.signIn"), "/login"],
+              [t("nav.openDemo"), "/signup"],
             ],
           },
           {
-            h: "Resources",
-            items: [
-              ["Help center", "/#"],
-              ["Changelog", "/#"],
-              ["Status", "/#"],
-            ],
+            h: t("nav.integrations"),
+            items: [[t("nav.integrations"), "/#integrations"]],
           },
         ].map((col) => (
           <div key={col.h}>
@@ -110,7 +114,7 @@ export function MarketingFooter() {
             </div>
             <ul className="mt-3 space-y-2 text-sm">
               {col.items.map(([l, h]) => (
-                <li key={l}>
+                <li key={`${l}-${h}`}>
                   <Link href={h} className="text-zinc-700 hover:text-ink">
                     {l}
                   </Link>

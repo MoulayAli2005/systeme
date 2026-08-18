@@ -5,21 +5,10 @@ import { usePathname } from "next/navigation";
 import { Bot, Minimize2, Send, X } from "lucide-react";
 import { api, ApiClientError } from "@/lib/api";
 import { cn } from "@/lib/format";
+import { useI18n } from "./i18n";
 
 type Role = "user" | "assistant";
 type Message = { role: Role; content: string };
-
-const SITE_PROMPTS = [
-  "C'est quoi Nexora ?",
-  "Comment me connecter ?",
-  "Quels transporteurs ?",
-];
-
-const OPS_PROMPTS = [
-  "Combien de livraisons cette semaine ?",
-  "Quelle ville livre le moins bien ?",
-  "Où en est le profit ?",
-];
 
 function isOpsPath(pathname: string) {
   return pathname.startsWith("/app") || pathname.startsWith("/platform");
@@ -29,6 +18,7 @@ export function Chatbot() {
   const pathname = usePathname();
   const ops = isOpsPath(pathname);
   const storageKey = ops ? "nexora.chat.ops" : "nexora.chat.site";
+  const { t, dict } = useI18n();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
@@ -77,10 +67,10 @@ export function Chatbot() {
     } catch (err) {
       const message =
         err instanceof ApiClientError && err.status === 401
-          ? "Connectez-vous pour que je lise vos commandes — ou restez ici, je peux parler produit."
+          ? t("chat.needLogin")
           : err instanceof Error
             ? err.message
-            : "Le chatbot est indisponible.";
+            : t("chat.unavailable");
       setMessages((current) => [...current, { role: "assistant", content: message }]);
     } finally {
       setPending(false);
@@ -92,7 +82,7 @@ export function Chatbot() {
     void send(draft);
   }
 
-  const prompts = ops ? OPS_PROMPTS : SITE_PROMPTS;
+  const prompts = ops ? dict.chat.opsPrompts : dict.chat.sitePrompts;
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-end p-4 md:p-5">
@@ -100,7 +90,7 @@ export function Chatbot() {
         <section
           className="pointer-events-auto flex h-[min(560px,70vh)] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-3xl border border-sand bg-white shadow-[0_24px_80px_rgba(7,20,16,0.25)]"
           role="dialog"
-          aria-label="Noor chatbot"
+          aria-label={t("chat.ask")}
         >
           <header className="flex items-center gap-3 bg-ink px-4 py-3 text-white">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-mint text-ink">
@@ -109,14 +99,14 @@ export function Chatbot() {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold leading-none">Noor</div>
               <div className="mt-1 text-[11px] text-white/55">
-                {ops ? "Copilote ops · vos chiffres" : "FR · AR · EN · Darija"}
+                {ops ? t("chat.opsIntro").split(".")[0] : "FR · AR · EN · Darija"}
               </div>
             </div>
             <button
               type="button"
               onClick={() => setOpen(false)}
               className="rounded-lg p-1.5 text-white/60 hover:bg-white/10 hover:text-white"
-              aria-label="Minimize chat"
+              aria-label={t("chat.minimize")}
             >
               <Minimize2 size={14} />
             </button>
@@ -127,7 +117,7 @@ export function Chatbot() {
                 setOpen(false);
               }}
               className="rounded-lg p-1.5 text-white/60 hover:bg-white/10 hover:text-white"
-              aria-label="Close chat"
+              aria-label={t("chat.close")}
             >
               <X size={14} />
             </button>
@@ -136,9 +126,7 @@ export function Chatbot() {
           <div ref={scroller} className="flex-1 space-y-3 overflow-y-auto bg-paper/60 px-3 py-3">
             {messages.length === 0 ? (
               <div className="rounded-2xl bg-white p-3 text-sm text-zinc-600 shadow-sm">
-                {ops
-                  ? "Je lis les 7 derniers jours de votre workspace. Demandez un taux de livraison, une ville, un n° NX-… ou un AWB."
-                  : "Je suis Noor. Je peux vous expliquer Nexora, les tarifs, les transporteurs, ou comment ouvrir la démo."}
+                {ops ? t("chat.opsIntro") : t("chat.siteIntro")}
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {prompts.map((prompt) => (
                     <button
@@ -173,7 +161,7 @@ export function Chatbot() {
             {pending ? (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-sm bg-white px-3 py-2 text-xs text-zinc-400 shadow-sm">
-                  Noor écrit…
+                  {t("chat.writing")}
                 </div>
               </div>
             ) : null}
@@ -183,14 +171,14 @@ export function Chatbot() {
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={ops ? "NX-11546, une ville, le profit…" : "Posez une question…"}
+              placeholder={ops ? t("chat.placeholderOps") : t("chat.placeholderSite")}
               className="flex-1 rounded-full bg-paper px-3 py-2 text-sm outline-none"
             />
             <button
               type="submit"
               disabled={pending || !draft.trim()}
               className="flex h-9 w-9 items-center justify-center rounded-full bg-mint text-ink disabled:opacity-40"
-              aria-label="Send"
+              aria-label={t("chat.send")}
             >
               <Send size={14} />
             </button>
@@ -201,12 +189,12 @@ export function Chatbot() {
           type="button"
           onClick={() => setOpen(true)}
           className="pointer-events-auto flex items-center gap-2 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_40px_rgba(7,20,16,0.35)] hover:bg-forest"
-          aria-label="Open Noor chatbot"
+          aria-label={t("chat.ask")}
         >
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-mint text-ink">
             <Bot size={15} />
           </span>
-          Ask Noor
+          {t("chat.ask")}
         </button>
       )}
     </div>
