@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   BarChart3,
   Bot,
@@ -19,34 +19,33 @@ import {
   Sparkles,
   Truck,
   Users,
+  Warehouse,
   Workflow,
+  ListTodo,
   Zap,
 } from "lucide-react";
 import { LogoMark } from "./brand";
 import { Avatar } from "./ui";
 import { cn } from "@/lib/format";
-import {
-  clearSession,
-  getSession,
-  hydrateStore,
-  useAppState,
-  useSession,
-} from "@/lib/store";
-import { WORKSPACE } from "@/lib/seed";
+import { api, type SessionUser } from "@/lib/api";
 
 const nav = [
   { href: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/app/orders", label: "Orders", icon: Package },
-  { href: "/app/confirmation", label: "Confirmation", icon: PhoneCall },
+  { href: "/app/pipeline", label: "Pipeline", icon: Workflow },
+  { href: "/app/customers", label: "Customers", icon: Users },
+  { href: "/app/confirmation", label: "Call center", icon: PhoneCall },
   { href: "/app/inbox", label: "Inbox", icon: Inbox },
-  { href: "/app/shipping", label: "Shipping", icon: Truck },
+  { href: "/app/shipping", label: "Shipments", icon: Truck },
   { href: "/app/returns", label: "Returns", icon: RotateCcw },
   { href: "/app/products", label: "Products", icon: Boxes },
-  { href: "/app/campaigns", label: "Campaigns", icon: Megaphone },
+  { href: "/app/inventory", label: "Inventory", icon: Warehouse },
+  { href: "/app/campaigns", label: "Marketing", icon: Megaphone },
   { href: "/app/automations", label: "Automations", icon: Workflow },
-  { href: "/app/ai-agent", label: "AI agent", icon: Bot },
+  { href: "/app/ai-agent", label: "AI", icon: Bot },
   { href: "/app/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/app/team", label: "Team", icon: Users },
+  { href: "/app/tasks", label: "Tasks", icon: ListTodo },
   { href: "/app/integrations", label: "Integrations", icon: Zap },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
@@ -54,23 +53,46 @@ const nav = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const session = useSession();
-  const state = useAppState();
+  const [session, setSession] = useState<SessionUser | null>(null);
+  const [pending, setPending] = useState(0);
+  const [unread, setUnread] = useState(0);
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<{ orders: { id: string; number: string }[]; customers: { id: string; name: string }[] } | null>(null);
 
   useEffect(() => {
-    hydrateStore();
-    if (!getSession()) router.replace("/login");
+    api<{ user: SessionUser | null }>("/api/v1/auth/me")
+      .then((r) => {
+        if (!r.user) router.replace("/login");
+        else setSession(r.user);
+      })
+      .catch(() => router.replace("/login"));
+    api<{ grouped: Array<{ status: string; _count: number }> }>("/api/v1/orders/pipeline")
+      .then((r) => {
+        const n = r.grouped
+          .filter((g) => ["NEW", "TO_CONFIRM", "CALLING"].includes(g.status))
+          .reduce((s, g) => s + g._count, 0);
+        setPending(n);
+      })
+      .catch(() => undefined);
+    api<{ rows: Array<{ unread: number }> }>("/api/v1/inbox")
+      .then((r) => setUnread(r.rows.reduce((s, c) => s + c.unread, 0)))
+      .catch(() => undefined);
   }, [router]);
 
-  const unread = state.conversations.reduce((n, c) => n + c.unread, 0);
-  const pending = state.orders.filter(
-    (o) => o.status === "pending_confirmation" || o.status === "new",
-  ).length;
+  useEffect(() => {
+    if (q.length < 2) return;
+    const t = setTimeout(() => {
+      api<{ orders: { id: string; number: string }[]; customers: { id: string; name: string }[] }>(
+        `/api/v1/search?q=${encodeURIComponent(q)}`,
+      ).then(setHits);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q]);
 
   if (!session) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper text-sm text-zinc-500">
-        Opening {WORKSPACE.name}…
+        Opening workspace…
       </div>
     );
   }
@@ -82,18 +104,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           <LogoMark className="h-8 w-8" />
           <div>
             <div className="text-sm font-semibold leading-none">Nexora</div>
-            <div className="mt-1 text-[11px] text-white/45">{WORKSPACE.name}</div>
+            <div className="mt-1 text-[11px] text-white/45">{session.organizationName}</div>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 pb-4 scrollbar-thin">
           {nav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/");
-            const badge =
-              item.label === "Inbox" && unread
-                ? unread
-                : item.label === "Confirmation" && pending
-                  ? pending
-                  : 0;
+            const badge = item.label === "Inbox" ? unread : item.label === "Call center" ? pending : 0;
             return (
               <Link
                 key={item.href}
@@ -106,9 +123,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <item.icon size={16} />
                 <span className="flex-1">{item.label}</span>
                 {badge ? (
-                  <span className="rounded-full bg-mint px-1.5 text-[10px] font-bold text-ink">
-                    {badge}
-                  </span>
+                  <span className="rounded-full bg-mint px-1.5 text-[10px] font-bold text-ink">{badge}</span>
                 ) : null}
               </Link>
             );
@@ -116,14 +131,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="border-t border-white/10 p-3">
           <div className="flex items-center gap-2">
-            <Avatar initials="AK" hue={150} size={32} />
+            <Avatar initials={session.name.slice(0, 2).toUpperCase()} hue={150} size={32} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-semibold">{session.name}</div>
-              <div className="truncate text-[11px] text-white/40">{session.email}</div>
+              <div className="truncate text-[11px] text-white/40">{session.roleKey}</div>
             </div>
             <button
-              onClick={() => {
-                clearSession();
+              onClick={async () => {
+                await api("/api/v1/auth/logout", { method: "POST" });
                 router.push("/");
               }}
               className="rounded-lg p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
@@ -136,15 +151,35 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-sand bg-paper/90 px-4 py-3 backdrop-blur md:px-6">
-          <div className="flex flex-1 items-center gap-2 rounded-full border border-sand bg-white px-3 py-2 text-sm text-zinc-400">
-            <Search size={15} />
-            <span className="hidden sm:inline">Search orders, customers, AWB…</span>
+          <div className="relative flex-1">
+            <div className="flex items-center gap-2 rounded-full border border-sand bg-white px-3 py-2 text-sm">
+              <Search size={15} className="text-zinc-400" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search orders, customers, SKUs…"
+                className="w-full bg-transparent outline-none"
+              />
+            </div>
+            {q.length >= 2 && hits ? (
+              <div className="absolute mt-1 w-full rounded-2xl border border-sand bg-white p-2 text-sm shadow-lg">
+                {hits.orders.map((o) => (
+                  <Link key={o.id} href={`/app/orders/${o.id}`} className="block rounded-lg px-2 py-1 hover:bg-paper">
+                    {o.number}
+                  </Link>
+                ))}
+                {hits.customers.map((c) => (
+                  <Link key={c.id} href={`/app/customers/${c.id}`} className="block rounded-lg px-2 py-1 hover:bg-paper">
+                    {c.name}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="hidden items-center gap-2 rounded-full bg-mint/20 px-3 py-1.5 text-xs font-semibold text-emerald-900 sm:flex">
             <Sparkles size={13} />
-            AI agent on
+            {session.organizationName}
           </div>
-          <div className="text-xs font-medium text-zinc-500">{WORKSPACE.plan} plan</div>
         </header>
         <main className="flex-1 px-4 py-5 md:px-6">{children}</main>
       </div>

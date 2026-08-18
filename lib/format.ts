@@ -1,4 +1,4 @@
-import type { OrderStatus, PaymentMethod, StoreSource } from "./types";
+import type { PaymentMethod, StoreSource } from "./types";
 
 export const MAD = new Intl.NumberFormat("fr-MA", {
   style: "currency",
@@ -50,35 +50,67 @@ export function dateLabel(iso: string) {
   });
 }
 
-export const STATUS_LABEL: Record<OrderStatus, string> = {
+export const STATUS_LABEL: Record<string, string> = {
   new: "New",
+  NEW: "New",
   pending_confirmation: "Pending confirm",
+  TO_CONFIRM: "To confirm",
+  CALLING: "Calling",
+  NO_ANSWER: "No answer",
+  CALLBACK: "Callback",
   confirmed: "Confirmed",
+  CONFIRMED: "Confirmed",
   cancelled: "Cancelled",
+  CANCELLED: "Cancelled",
   packed: "Packed",
+  PREPARING: "Preparing",
   shipped: "Shipped",
+  SHIPPED: "Shipped",
   out_for_delivery: "Out for delivery",
+  OUT_FOR_DELIVERY: "Out for delivery",
   delivered: "Delivered",
+  DELIVERED: "Delivered",
   failed_delivery: "Failed attempt",
   rto: "RTO",
   returned: "Returned",
+  RETURNED: "Returned",
   exchanged: "Exchanged",
 };
 
-export const STATUS_TONE: Record<OrderStatus, string> = {
+export const STATUS_TONE: Record<string, string> = {
   new: "bg-sky-50 text-sky-700 ring-sky-200",
+  NEW: "bg-sky-50 text-sky-700 ring-sky-200",
   pending_confirmation: "bg-amber-50 text-amber-800 ring-amber-200",
+  TO_CONFIRM: "bg-amber-50 text-amber-800 ring-amber-200",
+  CALLING: "bg-amber-50 text-amber-800 ring-amber-200",
+  NO_ANSWER: "bg-orange-50 text-orange-800 ring-orange-200",
+  CALLBACK: "bg-orange-50 text-orange-800 ring-orange-200",
   confirmed: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+  CONFIRMED: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   cancelled: "bg-zinc-100 text-zinc-600 ring-zinc-200",
+  CANCELLED: "bg-zinc-100 text-zinc-600 ring-zinc-200",
   packed: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+  PREPARING: "bg-indigo-50 text-indigo-700 ring-indigo-200",
   shipped: "bg-cyan-50 text-cyan-800 ring-cyan-200",
+  SHIPPED: "bg-cyan-50 text-cyan-800 ring-cyan-200",
   out_for_delivery: "bg-blue-50 text-blue-800 ring-blue-200",
+  OUT_FOR_DELIVERY: "bg-blue-50 text-blue-800 ring-blue-200",
   delivered: "bg-emerald-100 text-emerald-900 ring-emerald-200",
+  DELIVERED: "bg-emerald-100 text-emerald-900 ring-emerald-200",
   failed_delivery: "bg-orange-50 text-orange-800 ring-orange-200",
   rto: "bg-rose-50 text-rose-800 ring-rose-200",
   returned: "bg-rose-50 text-rose-700 ring-rose-200",
+  RETURNED: "bg-rose-50 text-rose-700 ring-rose-200",
   exchanged: "bg-violet-50 text-violet-800 ring-violet-200",
 };
+
+export function statusLabel(status: string) {
+  return STATUS_LABEL[status] ?? status.replaceAll("_", " ");
+}
+
+export function statusTone(status: string) {
+  return STATUS_TONE[status] ?? "bg-zinc-50 text-zinc-700 ring-zinc-200";
+}
 
 export const SOURCE_LABEL: Record<StoreSource, string> = {
   shopify: "Shopify",

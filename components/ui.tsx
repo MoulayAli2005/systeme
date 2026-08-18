@@ -1,17 +1,15 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { cn } from "@/lib/format";
-import type { OrderStatus } from "@/lib/types";
-import { STATUS_LABEL, STATUS_TONE } from "@/lib/format";
+import { cn, statusLabel, statusTone } from "@/lib/format";
 
-export function StatusBadge({ status }: { status: OrderStatus }) {
+export function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset whitespace-nowrap",
-        STATUS_TONE[status],
+        statusTone(status),
       )}
     >
-      {STATUS_LABEL[status]}
+      {statusLabel(status)}
     </span>
   );
 }

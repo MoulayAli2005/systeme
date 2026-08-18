@@ -1,46 +1,40 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Avatar } from "@/components/ui";
-import { useAppState } from "@/lib/store";
-
-const roleCopy: Record<string, string> = {
-  owner: "Full workspace",
-  confirmation: "Queue, calls, WhatsApp confirm",
-  inbox: "Shared inbox & campaigns",
-  shipping: "Labels, manifests, carriers",
-  returns: "RTO, inspection, exchanges",
-  marketing: "Broadcasts & analytics",
-};
+import { api } from "@/lib/api";
 
 export default function TeamPage() {
-  const { agents } = useAppState();
+  const q = useQuery({
+    queryKey: ["team"],
+    queryFn: () =>
+      api<{
+        rows: Array<{
+          id: string;
+          state: string;
+          confirmedToday: number;
+          avgConfirmMin: number;
+          hue: number;
+          user: { name: string; email: string };
+          team: { name: string } | null;
+        }>;
+      }>("/api/v1/team"),
+  });
+  if (q.isLoading) return <p className="text-sm text-zinc-500">Loading team…</p>;
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
-        <p className="text-sm text-zinc-500">Role-based access · live presence · confirmation scoreboard</p>
-      </div>
+      <h1 className="text-2xl font-semibold">Team</h1>
       <div className="grid gap-3 md:grid-cols-2">
-        {agents.map((a) => (
-          <article key={a.id} className="flex items-start gap-4 rounded-2xl border border-sand bg-white p-5">
-            <Avatar initials={a.initials} hue={a.hue} size={44} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <div className="font-semibold">{a.name}</div>
-                <span
-                  className={`h-2 w-2 rounded-full ${a.online ? "bg-emerald-500" : "bg-zinc-300"}`}
-                />
-              </div>
-              <div className="text-xs text-zinc-500">{a.email}</div>
-              <div className="mt-2 text-sm">{roleCopy[a.role]}</div>
-              <div className="mt-2 text-xs text-zinc-500">
-                {a.confirmedToday} confirmed today
-                {a.avgConfirmMin ? ` · ${a.avgConfirmMin}m average` : ""}
+        {(q.data?.rows ?? []).map((a) => (
+          <article key={a.id} className="flex gap-3 rounded-2xl border border-sand bg-white p-5">
+            <Avatar initials={a.user.name.slice(0, 2).toUpperCase()} hue={a.hue} size={44} />
+            <div>
+              <div className="font-semibold">{a.user.name}</div>
+              <div className="text-xs text-zinc-500">{a.user.email}</div>
+              <div className="mt-1 text-sm">
+                {a.state} · {a.confirmedToday} confirmed · {a.avgConfirmMin}m
               </div>
             </div>
-            <span className="rounded-full bg-paper px-2 py-0.5 text-[11px] font-semibold uppercase">
-              {a.role}
-            </span>
           </article>
         ))}
       </div>

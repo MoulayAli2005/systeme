@@ -1,174 +1,88 @@
 "use client";
 
-import { FormEvent, Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { aiReply, confirmOrder, markRead, sendMessage, useAppState } from "@/lib/store";
-import { clock, money } from "@/lib/format";
-import { StatusBadge, PrimaryButton } from "@/components/ui";
+import { FormEvent, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PrimaryButton } from "@/components/ui";
+import { api } from "@/lib/api";
+import { clock } from "@/lib/format";
+
+type Conv = {
+  id: string;
+  channel: string;
+  unread: number;
+  lastMessage: string | null;
+  customer: { name: string; phone: string; city: string };
+  messages: Array<{ id: string; from: string; text: string; createdAt: string }>;
+};
 
 export default function InboxPage() {
-  return (
-    <Suspense fallback={<div className="text-sm text-zinc-500">Opening inbox…</div>}>
-      <InboxInner />
-    </Suspense>
-  );
-}
-
-function InboxInner() {
-  const { conversations, orders, ai } = useAppState();
-  const params = useSearchParams();
-  const preset = params.get("c");
-  const sorted = [...conversations].sort(
-    (a, b) => +new Date(b.lastAt) - +new Date(a.lastAt),
-  );
-  const [active, setActive] = useState(preset || sorted[0]?.id);
-  const conv = conversations.find((c) => c.id === active) ?? sorted[0];
-  const order = orders.find((o) => o.id === conv?.orderId);
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["inbox"], queryFn: () => api<{ rows: Conv[] }>("/api/v1/inbox") });
+  const [active, setActive] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const conv = (q.data?.rows ?? []).find((c) => c.id === active) ?? q.data?.rows[0];
+  const send = useMutation({
+    mutationFn: (text: string) =>
+      api(`/api/v1/inbox/${conv!.id}/messages`, { method: "POST", body: JSON.stringify({ text }) }),
+    onSuccess: () => {
+      setDraft("");
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+    },
+  });
 
-  function send(e?: FormEvent) {
-    e?.preventDefault();
-    if (!conv || !draft.trim()) return;
-    sendMessage(conv.id, draft.trim(), "agent");
-    setDraft("");
-  }
-
-  function suggest() {
-    if (!conv) return;
-    const reply = aiReply(conv.lastMessage, {
-      orderNumber: order?.number,
-      product: order?.items[0]?.name,
-    });
-    setDraft(reply);
-  }
+  if (q.isLoading) return <p className="text-sm text-zinc-500">Opening inbox…</p>;
 
   return (
     <div className="flex h-[calc(100vh-7rem)] min-h-[520px] overflow-hidden rounded-2xl border border-sand bg-white">
-      <aside className="w-[280px] shrink-0 overflow-y-auto border-r border-sand scrollbar-thin">
-        <div className="sticky top-0 border-b border-sand bg-white px-3 py-3 text-sm font-semibold">
-          Inbox
-        </div>
-        {sorted.map((c) => (
+      <aside className="w-[260px] overflow-y-auto border-r border-sand">
+        {(q.data?.rows ?? []).map((c) => (
           <button
             key={c.id}
-            onClick={() => {
-              setActive(c.id);
-              markRead(c.id);
-            }}
-            className={`flex w-full flex-col border-b border-sand px-3 py-3 text-left ${conv?.id === c.id ? "bg-paper" : "hover:bg-paper/50"}`}
+            onClick={() => setActive(c.id)}
+            className={`w-full border-b border-sand px-3 py-3 text-left ${conv?.id === c.id ? "bg-paper" : ""}`}
           >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold">{c.customerName}</span>
-              {c.unread ? (
-                <span className="rounded-full bg-mint px-1.5 text-[10px] font-bold text-ink">
-                  {c.unread}
-                </span>
-              ) : (
-                <span className="text-[10px] uppercase text-zinc-400">{c.channel}</span>
-              )}
-            </div>
-            <span className="truncate text-xs text-zinc-500">{c.lastMessage}</span>
+            <div className="text-sm font-semibold">{c.customer.name}</div>
+            <div className="truncate text-xs text-zinc-500">{c.lastMessage}</div>
           </button>
         ))}
       </aside>
       {conv ? (
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between border-b border-sand px-4 py-3">
-            <div>
-              <div className="font-semibold">{conv.customerName}</div>
-              <div className="text-xs text-zinc-500">
-                {conv.phone} · {conv.city} · {conv.channel}
-              </div>
+          <header className="border-b border-sand px-4 py-3">
+            <div className="font-semibold">{conv.customer.name}</div>
+            <div className="text-xs text-zinc-500">
+              {conv.channel} · {conv.customer.phone} · {conv.customer.city}
             </div>
-            {order && ["new", "pending_confirmation"].includes(order.status) ? (
-              <PrimaryButton onClick={() => confirmOrder(order.id, "whatsapp")} className="text-xs">
-                Confirm order
-              </PrimaryButton>
-            ) : null}
           </header>
-          <div className="wa-bg flex-1 overflow-y-auto p-4 scrollbar-thin">
+          <div className="wa-bg flex-1 overflow-y-auto p-4">
             {conv.messages.map((m) => (
-              <div
-                key={m.id}
-                className={`mb-2 flex ${m.from === "customer" ? "justify-start" : "justify-end"}`}
-              >
-                <div
-                  className={`max-w-[75%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm shadow-sm ${
-                    m.from === "customer"
-                      ? "rounded-tl-sm bg-white"
-                      : m.from === "system"
-                        ? "bg-white"
-                        : m.from === "ai"
-                          ? "bg-[#d9fdd3]"
-                          : "rounded-tr-sm bg-[#d9fdd3]"
-                  }`}
-                >
-                  {m.from === "ai" || m.from === "system" ? (
-                    <div className="mb-1 text-[10px] font-semibold uppercase text-zinc-400">
-                      {m.from === "ai" ? ai.name : "Template"}
-                    </div>
-                  ) : null}
+              <div key={m.id} className={`mb-2 flex ${m.from === "customer" ? "justify-start" : "justify-end"}`}>
+                <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${m.from === "customer" ? "bg-white" : "bg-[#d9fdd3]"}`}>
                   {m.text}
-                  <div className="mt-1 text-right text-[10px] text-zinc-400">{clock(m.at)}</div>
+                  <div className="text-right text-[10px] text-zinc-400">{clock(m.createdAt)}</div>
                 </div>
               </div>
             ))}
           </div>
-          <form onSubmit={send} className="border-t border-sand p-3">
-            <div className="mb-2 flex gap-2">
-              <button
-                type="button"
-                onClick={suggest}
-                className="rounded-full bg-paper px-3 py-1 text-xs font-semibold"
-              >
-                Draft with {ai.name}
-              </button>
-              {["We’ll ship today.", "Driver will call before arrival.", "Size M is in stock."].map(
-                (t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setDraft(t)}
-                    className="hidden rounded-full bg-paper px-3 py-1 text-xs font-medium md:inline"
-                  >
-                    {t}
-                  </button>
-                ),
-              )}
-            </div>
-            <div className="flex gap-2">
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Message…"
-                className="flex-1 rounded-full border border-sand px-4 py-2.5 text-sm"
-              />
-              <PrimaryButton type="submit">Send</PrimaryButton>
-            </div>
+          <form
+            className="flex gap-2 border-t border-sand p-3"
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              if (draft.trim()) send.mutate(draft.trim());
+            }}
+          >
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="flex-1 rounded-full border border-sand px-4 py-2 text-sm"
+              placeholder="Message…"
+            />
+            <PrimaryButton type="submit">Send</PrimaryButton>
           </form>
         </section>
-      ) : null}
-      {order ? (
-        <aside className="hidden w-[260px] shrink-0 overflow-y-auto border-l border-sand p-4 lg:block">
-          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-            Linked order
-          </div>
-          <div className="mt-2 font-semibold">{order.number}</div>
-          <div className="mt-1">
-            <StatusBadge status={order.status} />
-          </div>
-          <div className="mt-3 text-sm">
-            {order.items.map((it) => (
-              <div key={it.productId}>
-                {it.name}
-                <div className="text-xs text-zinc-500">{it.variant}</div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 text-sm font-semibold">{money(order.total)} COD</div>
-          <div className="mt-1 text-xs text-zinc-500">{order.customer.address}</div>
-        </aside>
-      ) : null}
+      ) : (
+        <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">No conversations yet.</div>
+      )}
     </div>
   );
 }

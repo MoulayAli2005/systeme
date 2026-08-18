@@ -1,50 +1,49 @@
 "use client";
 
-import { Toggle } from "@/components/ui";
-import { toggleIntegration, useAppState } from "@/lib/store";
-
-const labels: Record<string, string> = {
-  store: "Stores",
-  ads: "Ads & leads",
-  channel: "Channels",
-  carrier: "Carriers",
-  sheet: "Sheets",
-};
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 
 export default function IntegrationsPage() {
-  const { integrations } = useAppState();
-  const kinds = ["store", "channel", "ads", "carrier", "sheet"] as const;
+  const q = useQuery({
+    queryKey: ["integrations"],
+    queryFn: () =>
+      api<{ rows: Array<{ id: string; kind: string; provider: string; name: string; connected: boolean }> }>(
+        "/api/v1/integrations",
+      ),
+  });
+  const providers = useQuery({
+    queryKey: ["providers"],
+    queryFn: () =>
+      api<{ rows: Array<{ kind: string; name: string; configured: boolean }>; demoMode: boolean }>("/api/v1/providers"),
+  });
+  if (q.isLoading) return <p className="text-sm text-zinc-500">Loading integrations…</p>;
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Integrations</h1>
+        <h1 className="text-2xl font-semibold">Integrations</h1>
         <p className="text-sm text-zinc-500">
-          Keep Shopify, WhatsApp and your carriers. Nexora sits in the middle.
+          Adapters live in <code>server/providers</code>. Live credentials (Twilio, SendGrid, carrier HTTP, OpenAI) are
+          used only when env vars are set. Otherwise the UI stays on the demo adapter and never fakes a live send.
         </p>
       </div>
-      {kinds.map((kind) => (
-        <section key={kind}>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-            {labels[kind]}
-          </h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            {integrations
-              .filter((i) => i.kind === kind)
-              .map((i) => (
-                <article
-                  key={i.id}
-                  className="flex items-center justify-between gap-3 rounded-2xl border border-sand bg-white p-4"
-                >
-                  <div>
-                    <div className="text-sm font-semibold">{i.name}</div>
-                    <div className="text-xs text-zinc-500">{i.detail}</div>
-                  </div>
-                  <Toggle checked={i.connected} onChange={() => toggleIntegration(i.id)} />
-                </article>
-              ))}
-          </div>
-        </section>
-      ))}
+      <div className="grid gap-3 md:grid-cols-2">
+        {(providers.data?.rows ?? []).map((i) => (
+          <article key={i.kind} className="rounded-2xl border border-sand bg-white p-4">
+            <div className="text-xs uppercase text-zinc-400">{i.kind}</div>
+            <div className="font-semibold">{i.name}</div>
+            <div className="text-xs text-zinc-500">
+              {i.configured ? "Adapter ready" : "Not configured — demo adapter only"}
+            </div>
+          </article>
+        ))}
+        {(q.data?.rows ?? []).map((i) => (
+          <article key={i.id} className="rounded-2xl border border-sand bg-white p-4">
+            <div className="text-xs uppercase text-zinc-400">{i.kind}</div>
+            <div className="font-semibold">{i.name}</div>
+            <div className="text-xs text-zinc-500">{i.connected ? "Workspace record connected" : "Not configured"}</div>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
