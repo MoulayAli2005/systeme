@@ -2,10 +2,17 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
+  Bot,
   Check,
+  Grid2X2,
+  Headset,
+  Inbox,
+  LineChart,
+  Megaphone,
   MessageCircle,
   Package,
   Phone,
+  RefreshCcw,
   Sparkles,
   Truck,
   Workflow,
@@ -136,6 +143,40 @@ export default function HomePage() {
               Move off the sheet <ArrowRight size={16} />
             </Link>
           </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-5 py-20">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+          Everything you need
+        </p>
+        <h2 className="font-display mt-3 max-w-2xl text-3xl tracking-tight sm:text-4xl">
+          One platform. Every COD workflow.
+        </h2>
+        <div className="mt-12 grid gap-4 sm:grid-cols-2">
+          {[
+            { icon: <Grid2X2 size={18} />, title: "Integrations", desc: "Shopify, Woo, YouCan & more" },
+            { icon: <MessageCircle size={18} />, title: "Confirmation", desc: "WhatsApp, calls & auto-assign" },
+            { icon: <Truck size={18} />, title: "Shipping", desc: "Carriers, webhooks & rules" },
+            { icon: <Package size={18} />, title: "Delivery", desc: "Follow-ups & reminders" },
+            { icon: <RefreshCcw size={18} />, title: "Returns & exchange", desc: "Reconcile every parcel" },
+            { icon: <Bot size={18} />, title: "AI agent", desc: "WhatsApp & Instagram replies" },
+            { icon: <Inbox size={18} />, title: "One inbox", desc: "All channels in one place" },
+            { icon: <LineChart size={18} />, title: "Marketing & analytics", desc: "Bulk campaigns, KPIs & profit" },
+            { icon: <Megaphone size={18} />, title: "WhatsApp campaigns", desc: "Broadcast to thousands at once" },
+            { icon: <Workflow size={18} />, title: "WhatsApp automation", desc: "Orders, sales & support on autopilot" },
+            { icon: <Headset size={18} />, title: "Call center", desc: "Confirm more orders by phone" },
+          ].map((f) => (
+            <div key={f.title} className="flex items-start gap-4 rounded-2xl border border-sand bg-white p-5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sand text-teal-600">
+                {f.icon}
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold">{f.title}</h3>
+                <p className="mt-0.5 text-sm text-zinc-500">{f.desc}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
