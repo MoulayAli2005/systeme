@@ -17,7 +17,7 @@ export default function ReturnsPage() {
           reason: string | null;
           order: { number: string; total: string; customer: { name: string; city: string } };
         }>;
-      }>("/api/v1/returns"),
+      }>("/api/v1/returns?limit=100"),
   });
   const patch = useMutation({
     mutationFn: (input: { id: string; status: string }) =>

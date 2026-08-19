@@ -2,30 +2,24 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
+  Bot,
   Check,
+  Grid2X2,
+  Headset,
+  Inbox,
+  LineChart,
+  Megaphone,
   MessageCircle,
   Package,
   Phone,
+  RefreshCcw,
   Sparkles,
   Truck,
   Workflow,
 } from "lucide-react";
 import { MarketingFooter, MarketingNav } from "@/components/marketing";
 import { LogoMark } from "@/components/brand";
-import { IntegrationLogo, type IntegrationId } from "@/components/integration-logos";
-
-const logos = [
-  "Shopify",
-  "WooCommerce",
-  "YouCan",
-  "WhatsApp",
-  "Instagram",
-  "Ozon Express",
-  "Ameex",
-  "Aramex",
-  "Google Sheets",
-  "TikTok",
-];
+import { PartnerShowcase, PartnerStrip } from "@/components/partner-section";
 
 export default function HomePage() {
   return (
@@ -81,22 +75,7 @@ export default function HomePage() {
             <HeroBoard />
           </div>
         </section>
-        <div className="border-t border-white/10 py-6">
-          <div className="mx-auto max-w-6xl overflow-hidden px-5">
-            <p className="mb-4 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-white/40">
-              Connects to the stack you already run
-            </p>
-            <div className="flex overflow-hidden">
-              <div className="animate-marquee flex min-w-full gap-10 pr-10 text-sm font-medium text-white/55">
-                {[...logos, ...logos].map((l, i) => (
-                  <span key={i} className="whitespace-nowrap">
-                    {l}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <PartnerStrip />
       </div>
 
       <section className="mx-auto max-w-6xl px-5 py-20">
@@ -167,6 +146,40 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section className="mx-auto max-w-6xl px-5 py-20">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+          Everything you need
+        </p>
+        <h2 className="font-display mt-3 max-w-2xl text-3xl tracking-tight sm:text-4xl">
+          One platform. Every COD workflow.
+        </h2>
+        <div className="mt-12 grid gap-4 sm:grid-cols-2">
+          {[
+            { icon: <Grid2X2 size={18} />, title: "Integrations", desc: "Shopify, Woo, YouCan & more" },
+            { icon: <MessageCircle size={18} />, title: "Confirmation", desc: "WhatsApp, calls & auto-assign" },
+            { icon: <Truck size={18} />, title: "Shipping", desc: "Carriers, webhooks & rules" },
+            { icon: <Package size={18} />, title: "Delivery", desc: "Follow-ups & reminders" },
+            { icon: <RefreshCcw size={18} />, title: "Returns & exchange", desc: "Reconcile every parcel" },
+            { icon: <Bot size={18} />, title: "AI agent", desc: "WhatsApp & Instagram replies" },
+            { icon: <Inbox size={18} />, title: "One inbox", desc: "All channels in one place" },
+            { icon: <LineChart size={18} />, title: "Marketing & analytics", desc: "Bulk campaigns, KPIs & profit" },
+            { icon: <Megaphone size={18} />, title: "WhatsApp campaigns", desc: "Broadcast to thousands at once" },
+            { icon: <Workflow size={18} />, title: "WhatsApp automation", desc: "Orders, sales & support on autopilot" },
+            { icon: <Headset size={18} />, title: "Call center", desc: "Confirm more orders by phone" },
+          ].map((f) => (
+            <div key={f.title} className="flex items-start gap-4 rounded-2xl border border-sand bg-white p-5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sand text-teal-600">
+                {f.icon}
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold">{f.title}</h3>
+                <p className="mt-0.5 text-sm text-zinc-500">{f.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section id="product" className="border-y border-sand bg-white py-20">
         <div className="mx-auto max-w-6xl px-5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
@@ -182,8 +195,8 @@ export default function HomePage() {
               title="Confirm orders without making a single call."
               body="Send a WhatsApp the moment an order is placed. Customers tap Confirm in seconds — no missed calls, no idle agents, no lost COD."
               points={[
+                "WhatsApp automation on create, shipped, out for delivery, delivered",
                 "Costs a fraction of a phone call",
-                "Runs at 2am when the call center is closed",
                 "Falls back to your agents when a human is needed",
               ]}
             />
@@ -286,49 +299,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section id="integrations" className="mx-auto max-w-6xl px-5 py-20">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-          Go live on your existing stack
-        </p>
-        <h2 className="font-display mt-3 max-w-xl text-3xl tracking-tight">
-          Stores, ads, WhatsApp and carriers. One click each.
-        </h2>
-        <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {(
-            [
-              ["Shopify", "Official sync", "shopify"],
-              ["WooCommerce", "Orders + stock", "woocommerce"],
-              ["YouCan", "MENA stores", "youcan"],
-              ["Google Sheets", "Import in 2 min", "sheets"],
-              ["Facebook Leads", "Forms → orders", "facebook"],
-              ["TikTok Forms", "Spark ads", "tiktok"],
-              ["WhatsApp API", "Green tick", "whatsapp"],
-              ["Ozon Express", "Labels + AWB", "ozon"],
-              ["Ameex", "Labels + AWB", "ameex"],
-              ["Aramex", "Labels + AWB", "aramex"],
-            ] as const satisfies ReadonlyArray<readonly [string, string, IntegrationId]>
-          ).map(([n, d, logo]) => (
-            <div key={n} className="rounded-2xl border border-sand bg-white p-4">
-              <div className="flex items-center gap-3">
-                <IntegrationLogo
-                  id={logo}
-                  className={
-                    logo === "woocommerce"
-                      ? "h-8 w-12 shrink-0"
-                      : logo === "aramex"
-                        ? "h-3.5 w-12 shrink-0"
-                        : "h-9 w-9 shrink-0 object-contain"
-                  }
-                />
-                <div>
-                  <div className="text-sm font-semibold">{n}</div>
-                  <div className="mt-1 text-xs text-zinc-500">{d}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      <PartnerShowcase />
 
       <section className="mx-auto max-w-6xl px-5 pb-8">
         <div className="grid gap-6 md:grid-cols-3">

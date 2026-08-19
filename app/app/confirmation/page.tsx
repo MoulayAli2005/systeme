@@ -47,7 +47,8 @@ export default function CallCenterPage() {
         <div>
           <h1 className="text-2xl font-semibold">Call center</h1>
           <p className="text-sm text-zinc-500">
-            {queue.data?.rows.length ?? 0} in queue · Twilio voice if TWILIO_* env vars are set, otherwise demo dialer
+            {queue.data?.rows.length ?? 0} in queue · WhatsApp automation handles the first ping — this desk is the fallback.
+            Twilio voice if TWILIO_* env vars are set, otherwise demo dialer.
           </p>
         </div>
         <div className="flex gap-2">

@@ -1,12 +1,13 @@
-import { prisma } from "../../db";
+import { prisma, type Db } from "../../db";
 import { ApiError } from "../../http";
 import { writeAudit } from "../../audit";
-import { messagingProvider, shippingProvider } from "../../providers/registry";
 import { runAutomations } from "../automations/engine";
 import { scoreRisk } from "../risk/engine";
 import { routeWarehouse } from "../warehouses/routing";
-import { reserveForOrder } from "../inventory/service";
+import { releaseForOrder, reserveForOrder } from "../inventory/service";
 import { dispatchOutgoing } from "../webhooks/dispatch";
+import { nextOrderNumber, orderPrefixOf } from "./numbering";
+import { assertTransition, checkTransition, loadGraph } from "./status";
 
 export async function listOrders(organizationId: string, params: {
   take: number;
@@ -75,38 +76,75 @@ export async function getOrder(organizationId: string, id: string) {
 
 export async function changeStatus(opts: {
   organizationId: string;
-  userId: string;
+  userId?: string;
   id: string;
   status: string;
   note?: string;
   ip?: string;
+  /** Set by operators allowed to repair a wrong state; recorded in the audit log. */
+  force?: boolean;
+  /** Where the change came from, e.g. `carrier-sync`. */
+  source?: string;
 }) {
-  const order = await getOrder(opts.organizationId, opts.id);
-  const updated = await prisma.order.update({
-    where: { id: order.id },
-    data: { status: opts.status },
+  const order = await prisma.order.findFirst({
+    where: { id: opts.id, organizationId: opts.organizationId, deletedAt: null },
+    select: { id: true, number: true, status: true, warehouseId: true },
   });
-  await prisma.orderEvent.create({
-    data: {
-      orderId: order.id,
-      title: `Status → ${opts.status}`,
-      detail: opts.note,
-      tone: ["DELIVERED", "CONFIRMED"].includes(opts.status)
-        ? "success"
-        : ["CANCELLED", "RETURNED"].includes(opts.status)
-          ? "danger"
-          : "default",
-      actorId: opts.userId,
-    },
+  if (!order) throw new ApiError(404, "NOT_FOUND", "Order not found.");
+
+  const check = await assertTransition(opts.organizationId, order.status, opts.status, opts.force);
+  if ("noop" in check && check.noop) {
+    return prisma.order.findFirstOrThrow({ where: { id: order.id } });
+  }
+  const overridden = opts.force === true && !(await isAllowed(opts.organizationId, order.status, opts.status));
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.order.update({
+      where: { id: order.id },
+      data: { status: opts.status },
+    });
+    await tx.orderEvent.create({
+      data: {
+        orderId: order.id,
+        title: `Status → ${opts.status}`,
+        detail: overridden ? `${opts.note ? `${opts.note} · ` : ""}forced override` : opts.note,
+        tone: ["DELIVERED", "CONFIRMED"].includes(opts.status)
+          ? "success"
+          : ["CANCELLED", "RETURNED"].includes(opts.status)
+            ? "danger"
+            : "default",
+        actorId: opts.userId,
+      },
+    });
+    // A cancelled order never ships, so its stock reservation must come back.
+    if (opts.status === "CANCELLED") {
+      const items = await tx.orderItem.findMany({
+        where: { orderId: order.id, variantId: { not: null } },
+        select: { variantId: true, quantity: true },
+      });
+      for (const item of items) {
+        await releaseForOrder(
+          {
+            organizationId: opts.organizationId,
+            warehouseId: order.warehouseId,
+            variantId: item.variantId!,
+            quantity: item.quantity,
+          },
+          tx,
+        );
+      }
+    }
+    return row;
   });
+
   await writeAudit({
     organizationId: opts.organizationId,
     userId: opts.userId,
-    action: "order.status",
+    action: overridden ? "order.status.override" : "order.status",
     entity: "Order",
     entityId: order.id,
     before: { status: order.status },
-    after: { status: opts.status },
+    after: { status: opts.status, source: opts.source ?? "app" },
     ip: opts.ip,
   });
   await runAutomations({
@@ -123,62 +161,19 @@ export async function changeStatus(opts: {
   return updated;
 }
 
-export async function bulkOrders(opts: {
-  organizationId: string;
-  userId: string;
-  ids: string[];
-  action: "status" | "assign" | "tag" | "untag" | "whatsapp" | "sms" | "ship";
-  value?: string;
-}) {
-  const orders = await prisma.order.findMany({
-    where: { organizationId: opts.organizationId, id: { in: opts.ids } },
-    include: { customer: true },
-  });
-  for (const order of orders) {
-    if (opts.action === "status" && opts.value) {
-      await changeStatus({
-        organizationId: opts.organizationId,
-        userId: opts.userId,
-        id: order.id,
-        status: opts.value,
-      });
-    } else if (opts.action === "assign" && opts.value) {
-      await prisma.order.update({ where: { id: order.id }, data: { agentId: opts.value } });
-    } else if (opts.action === "tag" && opts.value) {
-      await prisma.order.update({
-        where: { id: order.id },
-        data: { tags: { push: opts.value } },
-      });
-    } else if (opts.action === "whatsapp" || opts.action === "sms") {
-      await messagingProvider(opts.action === "sms" ? "sms" : "whatsapp").sendMessage({
-        to: order.customer.phone,
-        text: opts.value || `Update on ${order.number}`,
-      });
-    } else if (opts.action === "ship") {
-      const ship = await shippingProvider().createShipment({
-        orderId: order.id,
-        city: order.customer.city,
-        address: order.customer.address ?? order.customer.city,
-        phone: order.customer.phone,
-        codAmount: Number(order.codAmount),
-      });
-      await prisma.shipment.create({
-        data: {
-          organizationId: opts.organizationId,
-          orderId: order.id,
-          awb: ship.awb,
-          trackingUrl: ship.trackingUrl,
-        },
-      });
-      await prisma.order.update({ where: { id: order.id }, data: { status: "SHIPPED" } });
-    }
-  }
-  return { updated: orders.length };
+async function isAllowed(organizationId: string, from: string, to: string) {
+  const graph = await loadGraph(organizationId);
+  return checkTransition(from, to, graph).ok;
 }
 
-export async function findDuplicates(organizationId: string, phone: string, hours = 48) {
+export async function findDuplicates(
+  organizationId: string,
+  phone: string,
+  hours = 48,
+  client: Db = prisma,
+) {
   const since = new Date(Date.now() - hours * 3600_000);
-  return prisma.order.findMany({
+  return client.order.findMany({
     where: {
       organizationId,
       createdAt: { gte: since },
@@ -191,120 +186,143 @@ export async function findDuplicates(organizationId: string, phone: string, hour
 
 export async function createOrder(opts: {
   organizationId: string;
-  userId: string;
+  userId?: string;
   customer: { name: string; phone: string; city: string; address?: string };
   items: Array<{ name: string; variant?: string; quantity: number; price: number; variantId?: string }>;
   storeId?: string;
   source?: string;
   notes?: string;
 }) {
-  const dupes = await findDuplicates(opts.organizationId, opts.customer.phone);
-  let customer = await prisma.customer.findFirst({
-    where: { organizationId: opts.organizationId, phone: opts.customer.phone },
-  });
-  if (!customer) {
-    customer = await prisma.customer.create({
-      data: {
-        organizationId: opts.organizationId,
-        name: opts.customer.name,
-        phone: opts.customer.phone,
-        city: opts.customer.city,
-        address: opts.customer.address,
-      },
+  // Everything that must agree — customer, risk, number, items, reservations —
+  // is written in one transaction. Provider calls and automations run only
+  // after it commits, so a failure can never leave a half-created order or
+  // fire a WhatsApp message for an order that does not exist.
+  const { order, dupes, risk } = await prisma.$transaction(async (tx) => {
+    const dupes = await findDuplicates(opts.organizationId, opts.customer.phone, 48, tx);
+    let customer = await tx.customer.findFirst({
+      where: { organizationId: opts.organizationId, phone: opts.customer.phone },
     });
-  }
-
-  const history = await prisma.order.findMany({
-    where: { organizationId: opts.organizationId, customerId: customer.id, deletedAt: null },
-    select: { status: true, createdAt: true },
-  });
-  const dayAgo = Date.now() - 864e5;
-  const risk = scoreRisk({
-    totalOrders: history.length,
-    cancelled: history.filter((o) => o.status === "CANCELLED").length,
-    returned: history.filter((o) => o.status === "RETURNED").length,
-    refused: history.filter((o) => o.status === "RETURNED").length,
-    uniquePhones: 1,
-    uniqueAddresses: customer.address ? 1 : 0,
-    velocity24h: history.filter((o) => o.createdAt.getTime() >= dayAgo).length + 1,
-  });
-  await prisma.customer.update({
-    where: { id: customer.id },
-    data: { riskScore: risk.score, riskLabel: risk.label },
-  });
-
-  const store = opts.storeId
-    ? await prisma.store.findFirst({ where: { id: opts.storeId, organizationId: opts.organizationId } })
-    : await prisma.store.findFirst({ where: { organizationId: opts.organizationId } });
-  const warehouseId = await routeWarehouse(opts.organizationId, opts.customer.city, store?.warehouseId);
-  const count = await prisma.order.count({ where: { organizationId: opts.organizationId } });
-  const number = `NX-${10000 + count + 1}`;
-  const subtotal = opts.items.reduce((s, i) => s + i.price * i.quantity, 0);
-  const tags = [
-    ...(dupes.length ? ["potential_duplicate"] : []),
-    ...(risk.requireManualVerification ? ["manual_verification"] : []),
-  ];
-  const order = await prisma.order.create({
-    data: {
-      organizationId: opts.organizationId,
-      storeId: store?.id,
-      warehouseId,
-      customerId: customer.id,
-      number,
-      status: "TO_CONFIRM",
-      source: opts.source ?? "manual",
-      subtotal,
-      total: subtotal,
-      codAmount: subtotal,
-      notes: opts.notes,
-      tags,
-      duplicateOfId: dupes[0]?.id,
-      riskScore: risk.score,
-      items: {
-        create: opts.items.map((i) => ({
-          name: i.name,
-          variant: i.variant,
-          quantity: i.quantity,
-          price: i.price,
-          variantId: i.variantId,
-        })),
-      },
-      events: {
-        create: { title: "Order created", tone: "default", actorId: opts.userId },
-      },
-    },
-    include: { customer: true, items: true },
-  });
-  for (const item of opts.items) {
-    if (item.variantId) {
-      await reserveForOrder({
-        organizationId: opts.organizationId,
-        warehouseId,
-        variantId: item.variantId,
-        quantity: item.quantity,
+    if (!customer) {
+      customer = await tx.customer.create({
+        data: {
+          organizationId: opts.organizationId,
+          name: opts.customer.name,
+          phone: opts.customer.phone,
+          city: opts.customer.city,
+          address: opts.customer.address,
+        },
       });
     }
-  }
+
+    const history = await tx.order.findMany({
+      where: { organizationId: opts.organizationId, customerId: customer.id, deletedAt: null },
+      select: { status: true, createdAt: true },
+    });
+    const dayAgo = Date.now() - 864e5;
+    const risk = scoreRisk({
+      totalOrders: history.length,
+      cancelled: history.filter((o) => o.status === "CANCELLED").length,
+      returned: history.filter((o) => o.status === "RETURNED").length,
+      refused: history.filter((o) => o.status === "RETURNED").length,
+      uniquePhones: 1,
+      uniqueAddresses: customer.address ? 1 : 0,
+      velocity24h: history.filter((o) => o.createdAt.getTime() >= dayAgo).length + 1,
+    });
+    await tx.customer.update({
+      where: { id: customer.id },
+      data: { riskScore: risk.score, riskLabel: risk.label },
+    });
+
+    const store = opts.storeId
+      ? await tx.store.findFirst({ where: { id: opts.storeId, organizationId: opts.organizationId } })
+      : await tx.store.findFirst({ where: { organizationId: opts.organizationId } });
+    const organization = await tx.organization.findUniqueOrThrow({
+      where: { id: opts.organizationId },
+      select: { settings: true },
+    });
+    const warehouseId = await routeWarehouse(
+      opts.organizationId,
+      opts.customer.city,
+      store?.warehouseId,
+      tx,
+    );
+    const number = await nextOrderNumber(
+      opts.organizationId,
+      orderPrefixOf(organization.settings),
+      tx,
+    );
+    const subtotal = opts.items.reduce((s, i) => s + i.price * i.quantity, 0);
+    const tags = [
+      ...(dupes.length ? ["potential_duplicate"] : []),
+      ...(risk.requireManualVerification ? ["manual_verification"] : []),
+    ];
+    const order = await tx.order.create({
+      data: {
+        organizationId: opts.organizationId,
+        storeId: store?.id,
+        warehouseId,
+        customerId: customer.id,
+        number,
+        status: "TO_CONFIRM",
+        source: opts.source ?? "manual",
+        subtotal,
+        total: subtotal,
+        codAmount: subtotal,
+        notes: opts.notes,
+        tags,
+        duplicateOfId: dupes[0]?.id,
+        riskScore: risk.score,
+        items: {
+          create: opts.items.map((i) => ({
+            name: i.name,
+            variant: i.variant,
+            quantity: i.quantity,
+            price: i.price,
+            variantId: i.variantId,
+          })),
+        },
+        events: {
+          create: { title: "Order created", tone: "default", actorId: opts.userId },
+        },
+      },
+      include: { customer: true, items: true },
+    });
+    for (const item of opts.items) {
+      if (item.variantId) {
+        await reserveForOrder(
+          {
+            organizationId: opts.organizationId,
+            warehouseId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+          },
+          tx,
+        );
+      }
+    }
+    if (risk.requireManualVerification) {
+      await tx.notification.create({
+        data: {
+          organizationId: opts.organizationId,
+          title: "Risky order needs verification",
+          body: `${order.number} scored ${risk.score} (${risk.label}).`,
+          kind: "risk",
+        },
+      });
+    }
+    return { order, dupes, risk };
+  });
+
   await runAutomations({
     organizationId: opts.organizationId,
     trigger: "order.created",
     orderId: order.id,
-    payload: { total: subtotal },
+    payload: { total: Number(order.subtotal) },
   });
   await dispatchOutgoing({
     organizationId: opts.organizationId,
     event: "order.created",
-    payload: { orderId: order.id, number: order.number, total: subtotal },
+    payload: { orderId: order.id, number: order.number, total: Number(order.subtotal) },
   });
-  if (risk.requireManualVerification) {
-    await prisma.notification.create({
-      data: {
-        organizationId: opts.organizationId,
-        title: "Risky order needs verification",
-        body: `${order.number} scored ${risk.score} (${risk.label}).`,
-        kind: "risk",
-      },
-    });
-  }
   return { order, duplicates: dupes, risk };
 }

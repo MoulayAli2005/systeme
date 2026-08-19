@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "../server/db";
 import { ensurePermissions, seedRolesForOrg, seedStatuses } from "../server/org/bootstrap";
+import { presetActions, presetConditions, WHATSAPP_PRESETS } from "../server/modules/automations/whatsapp";
 
 const CITIES = [
   "Casablanca",
@@ -62,10 +63,12 @@ async function reset() {
     TRUNCATE TABLE
       "WebhookDelivery","WebhookEndpoint","AutomationRun","Automation",
       "AdSpend","Ad","Campaign","Message","Conversation","Call",
-      "ReturnCase","Shipment","OrderEvent","OrderItem","Order",
+      "RemittanceLine","Remittance","ReturnCase","ShipmentEvent","Shipment",
+      "OrderEvent","OrderItem","Order","OrderCounter",
       "InventoryMovement","InventoryItem","StockTransfer","ProductVariant","Product",
-      "Customer","AgentProfile","Team","Carrier","Store","Warehouse","Supplier",
+      "Customer","AgentProfile","Team","CarrierRate","Carrier","Store","Warehouse","Supplier",
       "Notification","Task","AuditLog","ApiKey","Integration","MessageTemplate",
+      "InboundEvent","JobRun",
       "StatusDefinition","UsageRecord","Subscription","RolePermission","Membership",
       "Session","LoginEvent","PasswordReset","EmailVerification",
       "Role","Organization"
@@ -271,6 +274,30 @@ async function seedOrg(opts: {
     ],
   });
 
+  // Rate grid: without it every shipment costs zero and margin is fiction.
+  // Big cities are cheaper to serve than the long tail.
+  const METRO = ["Casablanca", "Rabat", "Marrakech", "Tangier"];
+  await prisma.carrierRate.createMany({
+    data: carriers.flatMap((carrier, index) => [
+      {
+        organizationId: org.id,
+        carrierId: carrier.id,
+        city: "",
+        deliveryFee: 32 + index * 3,
+        returnFee: 18 + index * 2,
+        codFeePercent: 1.2,
+      },
+      ...METRO.map((city) => ({
+        organizationId: org.id,
+        carrierId: carrier.id,
+        city,
+        deliveryFee: 24 + index * 2,
+        returnFee: 14 + index,
+        codFeePercent: 1,
+      })),
+    ]),
+  });
+
   const variants: Array<{ id: string; productName: string; variantName: string; price: number; cost: number }> = [];
   const productCount = opts.slug === "atlas-atelier" ? 80 : 20;
   for (let i = 0; i < productCount; i++) {
@@ -405,17 +432,85 @@ async function seedOrg(opts: {
   const shipped = orderRows.filter((o) =>
     ["SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "RETURNED"].includes(o.status),
   );
-  const shipRows = shipped.slice(0, Math.min(shipped.length, 800)).map((o, i) => ({
-    id: randomUUID(),
-    organizationId: org.id,
-    orderId: o.id,
-    carrierId: carriers[i % carriers.length].id,
-    awb: `OZ${100000000 + i}`,
-    status: o.status === "DELIVERED" ? "delivered" : "in_transit",
-    createdAt: o.createdAt,
-  }));
+  const cityOf = new Map<string, string>(custRows.map((c) => [String(c.id), c.city]));
+  const shipRows = shipped.slice(0, Math.min(shipped.length, 800)).map((o, i) => {
+    const carrier = carriers[i % carriers.length];
+    const metro = METRO.includes(cityOf.get(o.customerId) ?? "");
+    const deliveryFee = metro ? 24 + (i % carriers.length) * 2 : 32 + (i % carriers.length) * 3;
+    const cod = Number(o.codAmount ?? o.total);
+    const status =
+      o.status === "DELIVERED" ? "delivered" : o.status === "RETURNED" ? "returned" : "in_transit";
+    return {
+      id: randomUUID(),
+      organizationId: org.id,
+      orderId: o.id,
+      carrierId: carrier.id,
+      awb: `${opts.slug === "atlas-atelier" ? "OZ" : "CH"}${100000000 + i}`,
+      status,
+      codAmount: cod,
+      shippingCost: deliveryFee,
+      returnFee: metro ? 14 : 18,
+      codFee: Math.round(cod * (metro ? 1 : 1.2)) / 100,
+      deliveredAt: status === "delivered" ? o.createdAt : null,
+      createdAt: o.createdAt,
+    };
+  });
   for (let i = 0; i < shipRows.length; i += 250) {
     await prisma.shipment.createMany({ data: shipRows.slice(i, i + 250) });
+  }
+
+  // One settled statement and one still open, so reconciliation has something
+  // to show — including a short payment to investigate.
+  const delivered = shipRows.filter((s) => s.status === "delivered");
+  if (delivered.length > 20) {
+    const settledBatch = delivered.slice(0, 40);
+    const openBatch = delivered.slice(40, 70);
+
+    for (const [index, batch] of [settledBatch, openBatch].entries()) {
+      if (!batch.length) continue;
+      const settled = index === 0;
+      const lines = batch.map((s, i) => {
+        // Every twentieth line is short-paid: real statements never balance.
+        const short = i % 20 === 19 ? 50 : 0;
+        const declared = Math.max(0, Number(s.codAmount) - Number(s.codFee) - short);
+        return {
+          organizationId: org.id,
+          shipmentId: s.id,
+          orderId: s.orderId,
+          awb: s.awb,
+          status: short ? "variance" : "matched",
+          declaredAmount: declared,
+          expectedAmount: Number(s.codAmount),
+          feeAmount: Number(s.codFee),
+          variance: declared + Number(s.codFee) - Number(s.codAmount),
+        };
+      });
+      const remittance = await prisma.remittance.create({
+        data: {
+          organizationId: org.id,
+          carrierId: carriers[0].id,
+          reference: `${settled ? "STMT" : "STMT-OPEN"}-${opts.slug.slice(0, 3).toUpperCase()}-0${index + 1}`,
+          status: settled ? "settled" : "matched",
+          declaredTotal: lines.reduce((s, l) => s + l.declaredAmount, 0),
+          matchedTotal: lines.reduce((s, l) => s + l.declaredAmount, 0),
+          expectedTotal: lines.reduce((s, l) => s + l.expectedAmount, 0),
+          feeTotal: lines.reduce((s, l) => s + l.feeAmount, 0),
+          varianceTotal: lines.reduce((s, l) => s + l.variance, 0),
+          settledAt: settled ? new Date() : null,
+        },
+      });
+      await prisma.remittanceLine.createMany({
+        data: lines.map((l) => ({ ...l, remittanceId: remittance.id })),
+      });
+      if (settled) {
+        for (const line of lines) {
+          await prisma.shipment.update({
+            where: { id: line.shipmentId },
+            data: { codCollected: line.declaredAmount, settledAt: new Date() },
+          });
+        }
+      }
+    }
   }
 
   const returned = orderRows.filter((o) => o.status === "RETURNED").slice(0, 80);
@@ -477,14 +572,15 @@ async function seedOrg(opts: {
 
   await prisma.automation.createMany({
     data: [
-      {
+      ...WHATSAPP_PRESETS.map((preset, index) => ({
         organizationId: org.id,
-        name: "WhatsApp confirm on create",
-        trigger: "order.created",
-        conditions: { paymentMethod: "cod" },
-        actions: [{ type: "send_whatsapp", text: "Hi {{customer_name}}, confirm {{order_id}} ({{total}} MAD COD to {{city}})?" }],
-        runsToday: 40,
-      },
+        name: preset.name,
+        trigger: preset.trigger,
+        conditions: presetConditions(preset),
+        actions: presetActions(preset),
+        enabled: true,
+        runsToday: [40, 12, 18, 22, 16, 14, 3][index] ?? 0,
+      })),
       {
         organizationId: org.id,
         name: "Dispatch on confirm",

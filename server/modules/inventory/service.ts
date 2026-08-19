@@ -1,4 +1,4 @@
-import { prisma } from "../../db";
+import { prisma, type Db } from "../../db";
 import { ApiError } from "../../http";
 
 export async function listInventory(organizationId: string, take = 200) {
@@ -50,14 +50,17 @@ export async function adjustStock(opts: {
   return updated;
 }
 
-export async function reserveForOrder(opts: {
-  organizationId: string;
-  warehouseId: string | null;
-  variantId: string;
-  quantity: number;
-}) {
+export async function reserveForOrder(
+  opts: {
+    organizationId: string;
+    warehouseId: string | null;
+    variantId: string;
+    quantity: number;
+  },
+  client: Db = prisma,
+) {
   if (!opts.warehouseId) return;
-  const item = await prisma.inventoryItem.findFirst({
+  const item = await client.inventoryItem.findFirst({
     where: {
       organizationId: opts.organizationId,
       warehouseId: opts.warehouseId,
@@ -65,16 +68,49 @@ export async function reserveForOrder(opts: {
     },
   });
   if (!item) return;
-  await prisma.inventoryItem.update({
+  await client.inventoryItem.update({
     where: { id: item.id },
     data: { reserved: { increment: opts.quantity } },
   });
-  await prisma.inventoryMovement.create({
+  await client.inventoryMovement.create({
     data: {
       itemId: item.id,
       type: "reserve",
       quantity: opts.quantity,
       reason: "order_created",
+    },
+  });
+}
+
+/** Releases a reservation when an order is cancelled before dispatch. */
+export async function releaseForOrder(
+  opts: {
+    organizationId: string;
+    warehouseId: string | null;
+    variantId: string;
+    quantity: number;
+  },
+  client: Db = prisma,
+) {
+  if (!opts.warehouseId) return;
+  const item = await client.inventoryItem.findFirst({
+    where: {
+      organizationId: opts.organizationId,
+      warehouseId: opts.warehouseId,
+      variantId: opts.variantId,
+    },
+  });
+  if (!item) return;
+  await client.inventoryItem.update({
+    where: { id: item.id },
+    data: { reserved: { decrement: Math.min(item.reserved, opts.quantity) } },
+  });
+  await client.inventoryMovement.create({
+    data: {
+      itemId: item.id,
+      type: "release",
+      quantity: opts.quantity,
+      reason: "order_cancelled",
     },
   });
 }

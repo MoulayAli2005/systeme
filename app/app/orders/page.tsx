@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { GhostButton, PrimaryButton } from "@/components/ui";
 import { api } from "@/lib/api";
 import { money, relativeTime } from "@/lib/format";
@@ -29,13 +29,16 @@ function OrdersInner() {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const qc = useQueryClient();
-  const list = useQuery({
+  const list = useInfiniteQuery({
     queryKey: ["orders", status, q],
-    queryFn: () =>
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
       api<{ rows: Row[]; nextCursor: string | null }>(
-        `/api/v1/orders?limit=50${status !== "ALL" ? `&status=${status}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`,
+        `/api/v1/orders?limit=50${status !== "ALL" ? `&status=${status}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}${pageParam ? `&cursor=${pageParam}` : ""}`,
       ),
+    getNextPageParam: (last) => last.nextCursor,
   });
+  const rows = list.data?.pages.flatMap((page) => page.rows) ?? [];
   const bulk = useMutation({
     mutationFn: (body: { ids: string[]; action: "status" | "ship"; value?: string }) =>
       api("/api/v1/orders/bulk", { method: "POST", body: JSON.stringify(body) }),
@@ -97,7 +100,7 @@ function OrdersInner() {
       ) : null}
       {list.isLoading ? <p className="text-sm text-zinc-500">Loading orders…</p> : null}
       {list.isError ? <p className="text-sm text-rose-600">Could not load orders.</p> : null}
-      {!list.isLoading && !list.data?.rows.length ? (
+      {!list.isLoading && !rows.length ? (
         <p className="rounded-2xl border border-sand bg-white p-8 text-sm text-zinc-500">No orders match these filters.</p>
       ) : null}
       <div className="overflow-x-auto rounded-2xl border border-sand bg-white">
@@ -113,7 +116,7 @@ function OrdersInner() {
             </tr>
           </thead>
           <tbody>
-            {(list.data?.rows ?? []).map((o) => (
+            {rows.map((o) => (
               <tr key={o.id} className="border-t border-sand">
                 <td className="px-4 py-3">
                   <input
@@ -148,6 +151,13 @@ function OrdersInner() {
           </tbody>
         </table>
       </div>
+      {list.hasNextPage ? (
+        <div className="flex justify-center">
+          <GhostButton onClick={() => list.fetchNextPage()} disabled={list.isFetchingNextPage}>
+            {list.isFetchingNextPage ? "Loading…" : "Load more"}
+          </GhostButton>
+        </div>
+      ) : null}
     </div>
   );
 }

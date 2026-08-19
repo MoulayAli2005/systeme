@@ -43,6 +43,10 @@ export async function GET() {
       "/analytics/overview": { get: { summary: "KPI overview + profit", tags: ["Analytics"], security } },
       "/analytics/agents": { get: { summary: "Agent leaderboard", tags: ["Analytics"], security } },
       "/automations": { get: { summary: "List automations", tags: ["Automations"], security }, post: { summary: "Create rule", tags: ["Automations"], security } },
+      "/automations/whatsapp": {
+        get: { summary: "WhatsApp automation presets", tags: ["Automations"], security },
+        post: { summary: "Enable or disable a WhatsApp preset", tags: ["Automations"], security },
+      },
       "/ai/ask": { post: { summary: "Ask the operations copilot", tags: ["AI"], security } },
       "/webhooks": { get: { summary: "Outgoing webhook endpoints", tags: ["Integrations"], security }, post: { summary: "Create endpoint", tags: ["Integrations"], security } },
       "/api-keys": { get: { summary: "List API keys", tags: ["Integrations"], security }, post: { summary: "Create API key", tags: ["Integrations"], security } },

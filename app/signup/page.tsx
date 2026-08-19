@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { Wordmark } from "@/components/brand";
+import { LanguageSwitcher } from "@/components/i18n";
 import { Field, inputClass, PrimaryButton } from "@/components/ui";
 import { api, ApiClientError } from "@/lib/api";
 
@@ -38,10 +39,11 @@ export default function SignupPage() {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="flex flex-col bg-paper">
-        <div className="px-6 py-5">
+        <div className="flex items-center justify-between px-6 py-5">
           <Link href="/">
             <Wordmark />
           </Link>
+          <LanguageSwitcher />
         </div>
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 pb-16">
           <h1 className="font-display text-3xl tracking-tight">Open a workspace.</h1>

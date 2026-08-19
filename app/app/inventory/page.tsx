@@ -21,7 +21,7 @@ export default function InventoryPage() {
           warehouse: { name: string };
           variant: { name: string; sku: string; product: { name: string } };
         }>;
-      }>("/api/v1/inventory"),
+      }>("/api/v1/inventory?limit=100"),
   });
   const adjust = useMutation({
     mutationFn: (body: { itemId: string; quantity: number; type: "adjust" | "receive" | "damage"; reason?: string }) =>
