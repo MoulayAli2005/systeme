@@ -6,6 +6,7 @@ import { Menu, X } from "lucide-react";
 import { Wordmark } from "./brand";
 
 const links = [
+  { href: "/#features", label: "Features" },
   { href: "/#product", label: "Product" },
   { href: "/#inbox", label: "Inbox" },
   { href: "/pricing", label: "Pricing" },
@@ -81,6 +82,7 @@ export function MarketingFooter() {
           {
             h: "Product",
             items: [
+              ["Features", "/#features"],
               ["Confirmation", "/#product"],
               ["Shipping", "/#product"],
               ["Inbox", "/#inbox"],

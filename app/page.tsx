@@ -3,10 +3,16 @@ import Link from "next/link";
 import {
   ArrowRight,
   Check,
+  Grid2X2,
+  MapPin,
   MessageCircle,
+  MessageCircleMore,
+  MessageSquare,
   Package,
   Phone,
+  RotateCcw,
   Sparkles,
+  TrendingUp,
   Truck,
   Workflow,
 } from "lucide-react";
@@ -166,6 +172,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <FeaturesCatalog />
 
       <section id="product" className="border-y border-sand bg-white py-20">
         <div className="mx-auto max-w-6xl px-5">
@@ -383,6 +391,103 @@ export default function HomePage() {
       </section>
       <MarketingFooter />
     </div>
+  );
+}
+
+const catalog = [
+  {
+    title: "Integrations",
+    desc: "Shopify, Woo, YouCan & more",
+    href: "/#integrations",
+    icon: <Grid2X2 size={18} strokeWidth={1.75} />,
+  },
+  {
+    title: "Confirmation",
+    desc: "WhatsApp, calls & auto-assign",
+    href: "/#product",
+    icon: <Check size={18} strokeWidth={2.25} />,
+  },
+  {
+    title: "Shipping",
+    desc: "Carriers, webhooks & rules",
+    href: "/#product",
+    icon: <Truck size={18} strokeWidth={1.75} />,
+  },
+  {
+    title: "Delivery",
+    desc: "Follow-ups & reminders",
+    href: "/#product",
+    icon: <MapPin size={18} strokeWidth={1.75} />,
+  },
+  {
+    title: "Returns & exchange",
+    desc: "Reconcile every parcel",
+    href: "/#product",
+    icon: <RotateCcw size={18} strokeWidth={1.75} />,
+  },
+  {
+    title: "AI agent",
+    desc: "WhatsApp & Instagram replies",
+    href: "/#ai",
+    icon: <MessageCircleMore size={18} strokeWidth={1.75} />,
+  },
+  {
+    title: "One inbox",
+    desc: "All channels in one place",
+    href: "/#inbox",
+    icon: <MessageSquare size={18} strokeWidth={1.75} />,
+  },
+  {
+    title: "Marketing & analytics",
+    desc: "Bulk campaigns, KPIs & profit",
+    href: "/pricing",
+    icon: <TrendingUp size={18} strokeWidth={1.75} />,
+  },
+  {
+    title: "WhatsApp campaigns",
+    desc: "Broadcast to thousands at once",
+    href: "/#inbox",
+    icon: <Phone size={18} strokeWidth={1.75} />,
+  },
+  {
+    title: "WhatsApp automation",
+    desc: "Orders, sales & support on autopilot",
+    href: "/#ai",
+    icon: <IntegrationLogo id="whatsapp" className="h-5 w-5" />,
+  },
+  {
+    title: "Call center",
+    desc: "Confirm more orders by phone",
+    href: "/#product",
+    icon: <Phone size={18} strokeWidth={1.75} />,
+  },
+] as const;
+
+function FeaturesCatalog() {
+  return (
+    <section id="features" className="bg-white py-20">
+      <div className="mx-auto max-w-6xl px-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+          Features
+        </p>
+        <h2 className="font-display mt-3 max-w-2xl text-3xl tracking-tight sm:text-4xl">
+          Everything your COD team runs in one place.
+        </h2>
+        <div className="mt-12 grid gap-x-16 gap-y-8 sm:grid-cols-2">
+          {catalog.map((f) => (
+            <Link key={f.title} href={f.href} className="group flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#e7f7f0] text-[#0f766e] transition group-hover:bg-mint/25">
+                {f.icon}
+              </div>
+              <div>
+                <h3 className="text-[15px] font-semibold tracking-tight text-ink">{f.title}</h3>
+                <p className="mt-0.5 text-sm text-zinc-500">{f.desc}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
