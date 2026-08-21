@@ -105,3 +105,9 @@ body {
   background-image: radial-gradient(rgba(7, 20, 16, 0.04) 0.6px, transparent 0.6px);
   background-size: 12px 12px;
 }
+
+.n8n-canvas {
+  background-color: #111318;
+  background-image: radial-gradient(#2c313c 1.15px, transparent 1.15px);
+  background-size: 18px 18px;
+}

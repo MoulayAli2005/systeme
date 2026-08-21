@@ -389,6 +389,31 @@ export function triggerLabel(value: string) {
   return AUTOMATION_TRIGGERS.find((t) => t.value === value)?.label ?? value;
 }
 
+export function conditionCaption(row: ConditionDraft) {
+  const field = CONDITION_FIELDS.find((f) => f.key === row.field);
+  const label = field?.label ?? row.field;
+  if (row.field === "paymentMethod") {
+    if (row.value === "cod") return "Payment is COD";
+    if (row.value === "prepaid") return "Payment is prepaid";
+  }
+  if (row.field === "status") return `Status is ${statusPretty(row.value)}`;
+  if (!row.value) return label;
+  return `${label}: ${row.value}`;
+}
+
+export function actionCaption(row: ActionDraft) {
+  if (row.type === "add_tag") return `Tag “${row.tag || "auto"}”`;
+  if (row.type === "change_status") return `Set ${statusPretty(row.status)}`;
+  if (row.type === "send_whatsapp") return "WhatsApp the customer";
+  if (row.type === "send_sms") return "SMS the customer";
+  if (row.type === "create_shipment") return "Create AWB";
+  if (row.type === "assign_queue") return row.strategy?.replaceAll("_", " ") || "Next agent";
+  if (row.type === "assign_agent") return "Assign agent";
+  if (row.type === "create_task") return row.title || "Create task";
+  if (row.type === "notify") return row.title || "Notify workspace";
+  return actionLabel(row.type);
+}
+
 export function actionLabel(value: string) {
   return ACTION_TYPES.find((a) => a.value === value)?.label ?? value.replaceAll("_", " ");
 }

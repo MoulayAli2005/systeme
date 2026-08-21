@@ -264,8 +264,8 @@ export default function HomePage() {
               Build the operating system once. Let it run every order.
             </h2>
             <p className="mt-4 leading-7 text-zinc-600">
-              A visual WHEN / IF / THEN builder — confirm on WhatsApp, create an AWB,
-              assign the next agent, or open a review task. No spreadsheet macros.
+              An n8n-style canvas — drop a trigger, IF filters, and actions. Confirm on
+              WhatsApp, create an AWB, assign the next agent, or open a review task.
             </p>
             <ul className="mt-6 space-y-2 text-sm text-zinc-700">
               {[
@@ -285,26 +285,25 @@ export default function HomePage() {
               Create an automation <ArrowRight size={16} />
             </Link>
           </div>
-          <div className="rounded-3xl border border-sand bg-paper p-5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
-              Rule · WhatsApp confirm on create
+          <div className="rounded-3xl border border-sand bg-[#111318] p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
+              Workflow · WhatsApp confirm
             </div>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-2xl bg-white p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">When</div>
-                <div className="mt-1 text-sm font-semibold">An order is created</div>
-              </div>
-              <div className="rounded-2xl bg-white p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">If</div>
-                <div className="mt-1 text-sm font-semibold">Payment is COD · total ≥ 0 MAD</div>
-              </div>
-              <div className="rounded-2xl bg-white p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">Then</div>
-                <div className="mt-1 text-sm font-semibold">Send WhatsApp, then add tag “to-confirm”</div>
-                <p className="mt-2 rounded-xl bg-paper px-3 py-2 text-xs leading-5 text-zinc-600">
-                  Hi {"{{customer_name}}"}, confirm {"{{order_id}}"} ({"{{total}}"} MAD COD to {"{{city}}"})?
-                </p>
-              </div>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              {[
+                ["Trigger", "Order created", "#ff6d5a"],
+                ["IF", "Payment is COD", "#5b8def"],
+                ["Action", "Send WhatsApp", "#3dfa9b"],
+              ].map(([badge, title, color], i) => (
+                <div key={title} className="flex items-center gap-2">
+                  {i ? <span className="h-px w-6 bg-white/25" /> : null}
+                  <div className="w-[150px] rounded-xl border border-white/10 bg-[#1c1f27] p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/40">{badge}</div>
+                    <div className="mt-1 text-sm font-semibold text-white">{title}</div>
+                    <span className="mt-2 inline-block h-1.5 w-8 rounded-full" style={{ background: color }} />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2, Workflow } from "lucide-react";
-import { AutomationBuilder } from "@/components/automation-builder";
+import { AutomationBuilder, WorkflowThumb } from "@/components/automation-builder";
 import { GhostButton, PrimaryButton, Toggle } from "@/components/ui";
 import { api, ApiClientError } from "@/lib/api";
 import {
@@ -52,8 +52,8 @@ export default function AutomationsPage() {
   const save = useMutation({
     mutationFn: async () => {
       const payload = toApiPayload(draft);
-      if (!payload.name) throw new ApiClientError(400, "BAD_REQUEST", "Name this rule so the team can find it.");
-      if (!payload.actions.length) throw new ApiClientError(400, "BAD_REQUEST", "Add at least one action.");
+      if (!payload.name) throw new ApiClientError(400, "BAD_REQUEST", "Name this workflow so the team can find it.");
+      if (!payload.actions.length) throw new ApiClientError(400, "BAD_REQUEST", "Add at least one action node.");
       if (editor === "create") {
         return api("/api/v1/automations", { method: "POST", body: JSON.stringify(payload) });
       }
@@ -69,7 +69,7 @@ export default function AutomationsPage() {
       qc.invalidateQueries({ queryKey: ["automations"] });
     },
     onError: (err) => {
-      setError(err instanceof ApiClientError ? err.message : "Could not save this automation.");
+      setError(err instanceof ApiClientError ? err.message : "Could not save this workflow.");
     },
   });
 
@@ -99,57 +99,31 @@ export default function AutomationsPage() {
   const rows = list.data?.rows ?? [];
   const editing = editor !== "closed";
 
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Automations</h1>
-          <p className="text-sm text-zinc-500">
-            Build WHEN / IF / THEN rules for confirmation, WhatsApp, shipping, and follow-ups.
-          </p>
+  if (editing) {
+    return (
+      <div className="-mx-4 -my-5 space-y-3 md:-mx-6">
+        <div className="flex flex-wrap gap-2 px-4 pt-4 md:px-6">
+          {AUTOMATION_PRESETS.map((preset) => (
+            <button
+              key={preset.name}
+              type="button"
+              onClick={() => openCreate(preset.draft)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                draft.name === preset.draft.name ? "bg-ink text-white" : "bg-white text-zinc-600 ring-1 ring-sand"
+              }`}
+            >
+              {preset.name}
+            </button>
+          ))}
         </div>
-        {!editing ? (
-          <PrimaryButton type="button" onClick={() => openCreate()}>
-            <Plus size={16} /> New automation
-          </PrimaryButton>
-        ) : null}
-      </div>
-
-      {editing ? (
-        <div className="space-y-3">
-          {editor === "create" ? (
-            <div>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                Start from a template
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {AUTOMATION_PRESETS.map((preset) => (
-                  <button
-                    key={preset.name}
-                    type="button"
-                    onClick={() => openCreate(preset.draft)}
-                    className={`rounded-2xl border px-4 py-3 text-left transition ${
-                      draft.name === preset.draft.name
-                        ? "border-ink bg-ink text-white"
-                        : "border-sand bg-white hover:border-ink/30"
-                    }`}
-                  >
-                    <div className="text-sm font-semibold">{preset.name}</div>
-                    <div className={`mt-1 text-xs ${draft.name === preset.draft.name ? "text-white/70" : "text-zinc-500"}`}>
-                      {preset.blurb}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+        <div className="px-4 pb-4 md:px-6">
           <AutomationBuilder
             draft={draft}
             onChange={setDraft}
             agents={agents}
             error={error}
             submitting={save.isPending}
-            submitLabel={editor === "create" ? "Create automation" : "Save changes"}
+            submitLabel={editor === "create" ? "Save workflow" : "Save workflow"}
             onSubmit={() => save.mutate()}
             onCancel={() => {
               setEditor("closed");
@@ -157,19 +131,35 @@ export default function AutomationsPage() {
             }}
           />
         </div>
-      ) : null}
+      </div>
+    );
+  }
 
-      {list.isLoading ? <p className="text-sm text-zinc-500">Loading automations…</p> : null}
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Automations</h1>
+          <p className="text-sm text-zinc-500">
+            n8n-style workflows: connect a trigger, IF filters, and actions on a canvas.
+          </p>
+        </div>
+        <PrimaryButton type="button" onClick={() => openCreate()}>
+          <Plus size={16} /> New workflow
+        </PrimaryButton>
+      </div>
+
+      {list.isLoading ? <p className="text-sm text-zinc-500">Loading workflows…</p> : null}
       {list.error ? <p className="text-sm text-rose-600">Could not load automations.</p> : null}
 
-      {!editing && !list.isLoading && rows.length === 0 ? (
+      {!list.isLoading && rows.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-sand bg-white px-6 py-14 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-ink text-mint">
             <Workflow size={22} />
           </div>
-          <h2 className="mt-4 text-lg font-semibold">No automations yet</h2>
+          <h2 className="mt-4 text-lg font-semibold">No workflows yet</h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-zinc-500">
-            Create a rule so Nexora can confirm COD orders, assign agents, or print an AWB without a click.
+            Open the canvas and chain nodes: When an order is created → IF COD → Send WhatsApp.
           </p>
           <div className="mt-5 flex justify-center">
             <PrimaryButton type="button" onClick={() => openCreate(AUTOMATION_PRESETS[0].draft)}>
@@ -185,7 +175,7 @@ export default function AutomationsPage() {
           return (
             <article key={row.id} className="rounded-2xl border border-sand bg-white p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-semibold">{row.name}</h2>
                     <span
@@ -196,7 +186,10 @@ export default function AutomationsPage() {
                       {row.enabled ? "On" : "Paused"}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-zinc-600">
+                  <div className="mt-3">
+                    <WorkflowThumb trigger={row.trigger} conditions={row.conditions} actions={row.actions} />
+                  </div>
+                  <p className="mt-2 text-sm text-zinc-600">
                     When {triggerLabel(row.trigger).toLowerCase()}
                     {summarizeConditions(row.conditions) === "always"
                       ? ""
@@ -211,7 +204,7 @@ export default function AutomationsPage() {
                 <div className="flex items-center gap-2">
                   <Toggle checked={row.enabled} onChange={(enabled) => tog.mutate({ id: row.id, enabled })} />
                   <GhostButton type="button" onClick={() => openEdit(row)}>
-                    <Pencil size={14} /> Edit
+                    <Pencil size={14} /> Open canvas
                   </GhostButton>
                   <button
                     type="button"

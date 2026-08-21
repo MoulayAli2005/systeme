@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AUTOMATION_PRESETS,
+  actionCaption,
+  conditionCaption,
   emptyDraft,
   fromApiRow,
   summarizeRule,
@@ -67,5 +69,10 @@ describe("automation builder payload", () => {
     expect(summarizeRule(payload)).toContain("When an order is created");
     expect(summarizeRule(payload)).toContain("payment is COD");
     expect(summarizeRule(payload)).toContain("send WhatsApp");
+  });
+
+  it("captions nodes for the canvas", () => {
+    expect(conditionCaption({ id: "1", field: "paymentMethod", value: "cod" })).toBe("Payment is COD");
+    expect(actionCaption({ ...emptyDraft().actions[0], type: "create_shipment" })).toBe("Create AWB");
   });
 });
