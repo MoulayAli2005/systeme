@@ -8,6 +8,7 @@ import { Wordmark } from "./brand";
 const links = [
   { href: "/#product", label: "Product" },
   { href: "/#inbox", label: "Inbox" },
+  { href: "/#automations", label: "Automations" },
   { href: "/pricing", label: "Pricing" },
   { href: "/#integrations", label: "Integrations" },
 ];
@@ -84,6 +85,7 @@ export function MarketingFooter() {
               ["Confirmation", "/#product"],
               ["Shipping", "/#product"],
               ["Inbox", "/#inbox"],
+              ["Automations", "/#automations"],
               ["AI agent", "/#ai"],
             ],
           },

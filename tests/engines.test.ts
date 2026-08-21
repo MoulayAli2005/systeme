@@ -46,6 +46,20 @@ describe("automation conditions", () => {
     expect(matchConditions({ status: "CONFIRMED" }, order, { status: "CONFIRMED" })).toBe(true);
     expect(matchConditions({ status: "CONFIRMED" }, order, { status: "NEW" })).toBe(false);
   });
+  it("matches city, tag and risk score", () => {
+    const rich = {
+      ...order,
+      city: "Casablanca",
+      source: "shopify",
+      tags: ["vip"],
+      riskScore: 70,
+    };
+    expect(matchConditions({ city: "casablanca", hasTag: "vip", minRiskScore: 55 }, rich)).toBe(true);
+    expect(matchConditions({ city: "Marrakech" }, rich)).toBe(false);
+    expect(matchConditions({ hasTag: "rto" }, rich)).toBe(false);
+    expect(matchConditions({ minRiskScore: 80 }, rich)).toBe(false);
+    expect(matchConditions({ source: "youcan" }, rich)).toBe(false);
+  });
 });
 
 describe("webhook signatures", () => {

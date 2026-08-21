@@ -254,6 +254,62 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section id="automations" className="border-t border-sand bg-white py-20">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 lg:grid-cols-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              06 · Automations
+            </p>
+            <h2 className="font-display mt-3 text-3xl tracking-tight sm:text-4xl">
+              Build the operating system once. Let it run every order.
+            </h2>
+            <p className="mt-4 leading-7 text-zinc-600">
+              A visual WHEN / IF / THEN builder — confirm on WhatsApp, create an AWB,
+              assign the next agent, or open a review task. No spreadsheet macros.
+            </p>
+            <ul className="mt-6 space-y-2 text-sm text-zinc-700">
+              {[
+                "Templates for COD confirm, dispatch, callbacks, and high-risk review",
+                "Filters on city, payment, amount, source, tags, and risk score",
+                "WhatsApp, SMS, shipping, tasks, and tags in the same rule",
+              ].map((p) => (
+                <li key={p} className="flex gap-2">
+                  <Check size={16} className="mt-0.5 text-emerald-600" /> {p}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/app/automations"
+              className="mt-8 inline-flex items-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white hover:bg-forest"
+            >
+              Create an automation <ArrowRight size={16} />
+            </Link>
+          </div>
+          <div className="rounded-3xl border border-sand bg-paper p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              Rule · WhatsApp confirm on create
+            </div>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl bg-white p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">When</div>
+                <div className="mt-1 text-sm font-semibold">An order is created</div>
+              </div>
+              <div className="rounded-2xl bg-white p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">If</div>
+                <div className="mt-1 text-sm font-semibold">Payment is COD · total ≥ 0 MAD</div>
+              </div>
+              <div className="rounded-2xl bg-white p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">Then</div>
+                <div className="mt-1 text-sm font-semibold">Send WhatsApp, then add tag “to-confirm”</div>
+                <p className="mt-2 rounded-xl bg-paper px-3 py-2 text-xs leading-5 text-zinc-600">
+                  Hi {"{{customer_name}}"}, confirm {"{{order_id}}"} ({"{{total}}"} MAD COD to {"{{city}}"})?
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="ai" className="border-y border-sand bg-ink py-20 text-white">
         <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 lg:grid-cols-2">
           <div>

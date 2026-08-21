@@ -192,20 +192,29 @@ export async function handleExtra(
     const ctx = await requirePermission("automations.write", req);
     const data = z
       .object({
-        name: z.string(),
-        trigger: z.string(),
+        name: z.string().min(1),
+        trigger: z.enum(["order.created", "order.status"]),
         conditions: z.record(z.string(), z.unknown()).optional(),
-        actions: z.array(z.record(z.string(), z.string())),
+        actions: z.array(z.record(z.string(), z.string())).min(1),
       })
       .parse(body);
     const row = await prisma.automation.create({
       data: {
         organizationId: ctx.organizationId,
-        name: data.name,
+        name: data.name.trim(),
         trigger: data.trigger,
         conditions: (data.conditions ?? {}) as object,
         actions: data.actions,
       },
+    });
+    await writeAudit({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: "automation.create",
+      entity: "Automation",
+      entityId: row.id,
+      after: { name: row.name, trigger: row.trigger },
+      ip,
     });
     return json(row, 201);
   }

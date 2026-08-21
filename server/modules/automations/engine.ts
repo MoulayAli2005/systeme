@@ -2,6 +2,7 @@ import { prisma } from "../../db";
 import { messagingProvider, shippingProvider } from "../../providers/registry";
 import { enqueue } from "../../jobs/queues";
 import { matchConditions } from "../risk/engine";
+import { pickAgent, type DispatchStrategy } from "../call-center/dispatch";
 
 export async function runAutomations(input: {
   organizationId: string;
@@ -21,10 +22,35 @@ export async function runAutomations(input: {
 
   for (const rule of rules) {
     const conditions = (rule.conditions ?? {}) as Record<string, unknown>;
-    if (!matchConditions(conditions, order, input.payload)) continue;
+    if (
+      !matchConditions(
+        conditions,
+        {
+          total: order.total,
+          paymentMethod: order.paymentMethod,
+          status: order.status,
+          callAttempts: order.callAttempts,
+          city: order.customer.city,
+          source: order.source,
+          tags: order.tags,
+          riskScore: order.riskScore,
+        },
+        input.payload,
+      )
+    ) {
+      continue;
+    }
     const actions = (Array.isArray(rule.actions) ? rule.actions : []) as Array<Record<string, string>>;
+    const logs: Array<{ type: string; status: string; detail?: string }> = [];
+    let ok = true;
     for (const action of actions) {
-      await applyAction(action, order);
+      try {
+        await applyAction(action, order);
+        logs.push({ type: action.type, status: "ok" });
+      } catch (err) {
+        ok = false;
+        logs.push({ type: action.type, status: "error", detail: (err as Error).message });
+      }
     }
     await prisma.automation.update({
       where: { id: rule.id },
@@ -34,23 +60,22 @@ export async function runAutomations(input: {
       data: {
         automationId: rule.id,
         orderId: order.id,
-        status: "ok",
-        log: JSON.stringify(actions),
+        status: ok ? "ok" : "error",
+        log: JSON.stringify(logs),
       },
     });
   }
 }
 
-async function applyAction(
-  action: Record<string, string>,
-  order: {
-    id: string;
-    organizationId: string;
-    number: string;
-    total: unknown;
-    customer: { phone: string; name: string; city: string; address: string | null };
-  },
-) {
+type AutomationOrder = {
+  id: string;
+  organizationId: string;
+  number: string;
+  total: unknown;
+  customer: { phone: string; name: string; city: string; address: string | null };
+};
+
+async function applyAction(action: Record<string, string>, order: AutomationOrder) {
   const type = action.type;
   if (type === "change_status" && action.status) {
     await prisma.order.update({ where: { id: order.id }, data: { status: action.status } });
@@ -60,6 +85,13 @@ async function applyAction(
   }
   if (type === "assign_agent" && action.agentId) {
     await prisma.order.update({ where: { id: order.id }, data: { agentId: action.agentId } });
+  }
+  if (type === "assign_queue") {
+    const strategy = (action.strategy as DispatchStrategy) || "least_loaded";
+    const agentId = await pickAgent(order.organizationId, strategy);
+    if (agentId) {
+      await prisma.order.update({ where: { id: order.id }, data: { agentId } });
+    }
   }
   if (type === "send_whatsapp" || type === "send_sms") {
     const channel = type === "send_sms" ? "sms" : "whatsapp";
@@ -81,6 +113,27 @@ async function applyAction(
         orderId: order.id,
         awb: ship.awb,
         trackingUrl: ship.trackingUrl,
+      },
+    });
+  }
+  if (type === "create_task") {
+    await prisma.task.create({
+      data: {
+        organizationId: order.organizationId,
+        orderId: order.id,
+        title: interpolate(action.title || `Follow up ${order.number}`, order),
+        description: interpolate(action.text || "", order) || undefined,
+        priority: action.priority || "medium",
+      },
+    });
+  }
+  if (type === "notify") {
+    await prisma.notification.create({
+      data: {
+        organizationId: order.organizationId,
+        title: interpolate(action.title || "Automation", order),
+        body: interpolate(action.text || `${order.number} matched a rule.`, order),
+        kind: "automation",
       },
     });
   }

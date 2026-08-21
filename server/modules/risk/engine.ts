@@ -73,9 +73,20 @@ export function scoreRisk(input: RiskInputs): RiskResult {
   };
 }
 
+export type ConditionOrder = {
+  total: unknown;
+  paymentMethod: string;
+  status: string;
+  callAttempts: number;
+  city?: string;
+  source?: string;
+  tags?: string[];
+  riskScore?: number;
+};
+
 export function matchConditions(
   conditions: Record<string, unknown>,
-  order: { total: unknown; paymentMethod: string; status: string; callAttempts: number },
+  order: ConditionOrder,
   payload: Record<string, unknown> = {},
 ) {
   if (conditions.status && conditions.status !== (payload.status ?? order.status)) return false;
@@ -83,6 +94,15 @@ export function matchConditions(
   if (typeof conditions.minTotal === "number" && Number(order.total) < conditions.minTotal) return false;
   if (typeof conditions.maxTotal === "number" && Number(order.total) > conditions.maxTotal) return false;
   if (typeof conditions.minCallAttempts === "number" && order.callAttempts < conditions.minCallAttempts) {
+    return false;
+  }
+  if (conditions.city) {
+    const city = (order.city ?? "").trim().toLowerCase();
+    if (city !== String(conditions.city).trim().toLowerCase()) return false;
+  }
+  if (conditions.source && conditions.source !== order.source) return false;
+  if (conditions.hasTag && !(order.tags ?? []).includes(String(conditions.hasTag))) return false;
+  if (typeof conditions.minRiskScore === "number" && (order.riskScore ?? 0) < conditions.minRiskScore) {
     return false;
   }
   return true;

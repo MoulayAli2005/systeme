@@ -455,13 +455,72 @@ async function route(req: NextRequest, method: string, path: string, url: URL, b
 
   if (path === "automations" && method === "GET") {
     const ctx = await requirePermission("automations.read", req);
-    return json({ rows: await prisma.automation.findMany({ where: { organizationId: ctx.organizationId } }) });
+    const rows = await prisma.automation.findMany({
+      where: { organizationId: ctx.organizationId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        runs: { take: 5, orderBy: { createdAt: "desc" }, select: { id: true, status: true, createdAt: true } },
+      },
+    });
+    return json({ rows });
+  }
+  if (path.match(/^automations\/[^/]+\/runs$/) && method === "GET") {
+    const ctx = await requirePermission("automations.read", req);
+    const id = path.split("/")[1];
+    const rule = await prisma.automation.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      select: { id: true },
+    });
+    if (!rule) throw new ApiError(404, "NOT_FOUND", "Automation not found.");
+    const rows = await prisma.automationRun.findMany({
+      where: { automationId: id },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+    });
+    return json({ rows });
   }
   if (path.match(/^automations\/[^/]+$/) && method === "PATCH") {
     const ctx = await requirePermission("automations.write", req);
     const id = path.split("/")[1];
-    const enabled = z.object({ enabled: z.boolean() }).parse(body).enabled;
-    await prisma.automation.updateMany({ where: { id, organizationId: ctx.organizationId }, data: { enabled } });
+    const data = z
+      .object({
+        enabled: z.boolean().optional(),
+        name: z.string().min(1).optional(),
+        trigger: z.string().optional(),
+        conditions: z.record(z.string(), z.unknown()).optional(),
+        actions: z.array(z.record(z.string(), z.string())).optional(),
+      })
+      .parse(body);
+    const existing = await prisma.automation.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+    });
+    if (!existing) throw new ApiError(404, "NOT_FOUND", "Automation not found.");
+    const row = await prisma.automation.update({
+      where: { id },
+      data: {
+        ...(data.enabled !== undefined ? { enabled: data.enabled } : {}),
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.trigger !== undefined ? { trigger: data.trigger } : {}),
+        ...(data.conditions !== undefined ? { conditions: data.conditions as object } : {}),
+        ...(data.actions !== undefined ? { actions: data.actions } : {}),
+      },
+    });
+    return json(row);
+  }
+  if (path.match(/^automations\/[^/]+$/) && method === "DELETE") {
+    const ctx = await requirePermission("automations.write", req);
+    const id = path.split("/")[1];
+    const deleted = await prisma.automation.deleteMany({
+      where: { id, organizationId: ctx.organizationId },
+    });
+    if (!deleted.count) throw new ApiError(404, "NOT_FOUND", "Automation not found.");
+    await writeAudit({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: "automation.delete",
+      entity: "Automation",
+      entityId: id,
+    });
     return json({ ok: true });
   }
 
